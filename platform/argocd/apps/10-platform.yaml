@@ -1,0 +1,248 @@
+# Wave -1 and 0: the gateway, identity, enforcement plane, telemetry and models.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentgateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: cr.agentgateway.dev/charts
+    chart: agentgateway
+    targetRevision: 1.7.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/keycloak
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: telemetry-stores
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/telemetry
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telemetry
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eacp-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/charts/eacp-gateway
+    helm:
+      valueFiles:
+        - values.yaml   # profile overlay patches this to values-cloud-gpu.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eacp-system
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/charts/eacp-system
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eacp-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/kyverno
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: models
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/models/laptop   # profile overlay patches this
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  sources:
+    - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      chart: opentelemetry-collector
+      targetRevision: 0.135.0   # TODO(verify)
+      helm:
+        valueFiles:
+          - $values/platform/telemetry/otel-collector-values.yaml
+    - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telemetry
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jaeger
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  sources:
+    - repoURL: https://jaegertracing.github.io/helm-charts
+      chart: jaeger
+      targetRevision: 4.0.0   # TODO(verify): chart for Jaeger v2
+      helm:
+        valueFiles:
+          - $values/platform/telemetry/jaeger-values.yaml
+    - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telemetry
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seaweedfs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    # S3-compatible store for Langfuse (open item 2 in docs/design.md). Apache-2.0.
+    repoURL: https://seaweedfs.github.io/seaweedfs/helm
+    chart: seaweedfs
+    targetRevision: 4.0.0   # TODO(verify)
+    helm:
+      values: |
+        s3:
+          enabled: true
+          port: 8333
+        master:
+          replicas: 1
+        volume:
+          replicas: 1
+        filer:
+          replicas: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telemetry
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: langfuse
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  sources:
+    - repoURL: https://langfuse.github.io/langfuse-k8s
+      chart: langfuse
+      targetRevision: 1.5.0   # TODO(verify): chart for Langfuse v4
+      helm:
+        valueFiles:
+          - $values/platform/telemetry/langfuse-values.yaml
+    - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telemetry
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

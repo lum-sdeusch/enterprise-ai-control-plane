@@ -1,0 +1,72 @@
+{{- /*
+credentials.mode: delegated. The gateway exchanges the caller's token (RFC 8693) for one with
+the backend's audience before forwarding, so the MCP server authorises the real user and the
+caller's gateway token never reaches it (the MCP spec forbids passthrough).
+*/ -}}
+{{- if eq .Values.spec.credentials.mode "delegated" }}
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: keycloak-token-endpoint
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    app.kubernetes.io/part-of: eacp
+spec:
+  static:
+    host: {{ printf "%s.%s.svc.cluster.local" .Values.platform.keycloak.serviceName .Values.platform.keycloak.namespace }}
+    port: {{ .Values.platform.keycloak.port }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-{{ include "mcp-tool.name" . }}-token-exchange
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ include "mcp-tool.name" . }}
+  backend:
+    auth:
+      oauthTokenExchange:
+        backendRef:
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: keycloak-token-endpoint
+        path: {{ .Values.platform.keycloak.tokenPath | quote }}
+        grantType: TokenExchange
+        audiences:
+          - {{ .Values.spec.credentials.delegated.audience | quote }}
+        {{- with .Values.spec.credentials.delegated.scopes }}
+        scopes:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        clientAuth:
+          clientId: {{ .Values.platform.keycloak.gatewayClientId | quote }}
+          method: ClientSecretBasic
+          secretRef:
+            name: {{ .Values.platform.keycloak.gatewayClientSecretName }}
+---
+# The gateway's own client secret, delivered into this namespace from the secrets manager.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.platform.keycloak.gatewayClientSecretName }}
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    app.kubernetes.io/part-of: eacp
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.platform.secrets.clusterSecretStore }}
+  target:
+    name: {{ .Values.platform.keycloak.gatewayClientSecretName }}
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: {{ .Values.platform.keycloak.gatewayClientSecretPath | quote }}
+# TODO(verify): the Secret key name agentgateway reads the client secret from.
+{{- end }}

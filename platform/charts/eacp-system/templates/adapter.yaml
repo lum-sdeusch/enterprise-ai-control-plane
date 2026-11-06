@@ -1,0 +1,247 @@
+{{- /*
+The adapter and its OPA sidecar share a pod so the policy query never leaves localhost.
+gRPC (ExtMCP hook) on 9001 behind Service port 4445 with h2c; HTTP (LLM prompt guard, routing
+callout, approvals, health) on 8080.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+  namespace: {{ .Values.namespace }}
+data:
+  opa.yaml: |
+    services:
+      registry:
+        url: {{ .Values.policy.registryUrl }}
+        type: oci
+    bundles:
+      eacp:
+        service: registry
+        resource: {{ .Values.policy.bundleResource }}
+        polling:
+          min_delay_seconds: {{ .Values.policy.pollingMinSeconds }}
+          max_delay_seconds: {{ .Values.policy.pollingMaxSeconds }}
+        # TODO(sign): verify the bundle signature once CI signs it (scripts/build-bundle.sh).
+        # signing:
+        #   keyid: eacp-ci
+        #   scope: read
+    decision_logs:
+      console: true
+      # Masks tool arguments, result text and raw findings before the decision is logged; the
+      # mask rules live in policies/rego/00-global/mask.rego (package system.log).
+    status:
+      console: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eacp-adapter
+  namespace: {{ .Values.namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eacp-adapter
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: eacp-adapter
+    app.kubernetes.io/part-of: eacp
+spec:
+  replicas: {{ .Values.adapter.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eacp-adapter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eacp-adapter
+        app.kubernetes.io/part-of: eacp
+    spec:
+      serviceAccountName: eacp-adapter
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsUser }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: adapter
+          image: {{ .Values.images.adapter | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.adapter.grpcPort }}
+            - name: http
+              containerPort: {{ .Values.adapter.httpPort }}
+          env:
+            - name: EACP_GRPC_ADDR
+              value: ":{{ .Values.adapter.grpcPort }}"
+            - name: EACP_HTTP_ADDR
+              value: ":{{ .Values.adapter.httpPort }}"
+            - name: EACP_PUBLIC_URL
+              value: {{ .Values.gateway.publicUrl | quote }}
+            - name: EACP_OPA_URL
+              value: "http://127.0.0.1:8181"
+            - name: EACP_GUARDRAILS_URL
+              value: "http://eacp-guardrails.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.guardrails.port }}"
+            - name: EACP_VALKEY_ADDR
+              value: "valkey.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.valkey.port }}"
+            - name: EACP_CLICKHOUSE_URL
+              value: {{ .Values.telemetry.clickhouseUrl | quote }}
+            - name: EACP_CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.telemetry.auditWriterSecretName }}
+                  key: username
+            - name: EACP_CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.telemetry.auditWriterSecretName }}
+                  key: password
+            - name: EACP_AUDIT_REQUIRED
+              value: {{ .Values.adapter.auditRequired | quote }}
+            - name: EACP_CONTENT_CAPTURE
+              value: {{ .Values.telemetry.contentCapture | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.otlpEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: eacp-adapter
+            - name: EACP_ROUTE_MODEL_EXTERNAL
+              value: {{ .Values.adapter.routeModels.external | quote }}
+            - name: EACP_ROUTE_MODEL_INHOUSE
+              value: {{ .Values.adapter.routeModels.inhouse | quote }}
+            - name: EACP_OIDC_ISSUER
+              value: {{ .Values.keycloak.issuer | quote }}
+            - name: EACP_OIDC_INTERNAL_URL
+              value: {{ .Values.keycloak.internalUrl | quote }}
+            - name: EACP_OIDC_CLIENT_ID
+              value: {{ .Values.keycloak.adapterClientId | quote }}
+            - name: EACP_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.adapterClientSecretName }}
+                  key: client-secret
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.adapter.resources | nindent 12 }}
+        - name: opa
+          image: {{ .Values.images.opa | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          args:
+            - run
+            - --server
+            - --addr=127.0.0.1:8181
+            - --config-file=/config/opa.yaml
+            - --log-level=info
+            - --log-format=json
+          volumeMounts:
+            - name: opa-config
+              mountPath: /config
+              readOnly: true
+            - name: opa-tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health?bundles
+              port: 8181
+              host: 127.0.0.1
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: opa-config
+          configMap:
+            name: opa-config
+        - name: opa-tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eacp-adapter
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: eacp-adapter
+    app.kubernetes.io/part-of: eacp
+spec:
+  selector:
+    app.kubernetes.io/name: eacp-adapter
+  ports:
+    - name: grpc
+      port: {{ .Values.adapter.servicePort }}
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c
+    - name: http
+      port: {{ .Values.adapter.httpPort }}
+      targetPort: http
+---
+# The adapter's own OIDC client secret (approval page login) and the audit writer credential.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.keycloak.adapterClientSecretName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.secrets.clusterSecretStore }}
+  target:
+    name: {{ .Values.keycloak.adapterClientSecretName }}
+  dataFrom:
+    - extract:
+        key: {{ .Values.keycloak.adapterClientSecretPath | quote }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.telemetry.auditWriterSecretName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.secrets.clusterSecretStore }}
+  target:
+    name: {{ .Values.telemetry.auditWriterSecretName }}
+  dataFrom:
+    - extract:
+        key: {{ .Values.telemetry.auditWriterSecretPath | quote }}
+---
+# The Anthropic key lives in the gateway namespace, where the model backends read it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.secrets.anthropicApiKeySecretName }}
+  namespace: {{ .Values.gateway.namespace }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.secrets.clusterSecretStore }}
+  target:
+    name: {{ .Values.secrets.anthropicApiKeySecretName }}
+  dataFrom:
+    - extract:
+        key: {{ .Values.secrets.anthropicApiKeyPath | quote }}
+# TODO(verify): the Secret key agentgateway expects for provider auth (e.g. "Authorization").

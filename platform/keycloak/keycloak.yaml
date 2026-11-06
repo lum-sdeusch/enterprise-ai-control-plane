@@ -1,0 +1,45 @@
+# Keycloak 26.8 through the Keycloak operator. The realm is imported from the generated
+# realm-import.yaml. Three features matter for this design (ADR 0023):
+#   - standard token exchange: GA, no flag.
+#   - delegation with actor tokens and the `act` claim: preview in 26.8.
+#   - identity-assertion-jwt (Enterprise-Managed Authorization): experimental since 26.7.
+# TODO(verify): exact feature names for the preview/experimental flags in 26.8.
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  instances: 1
+  image: quay.io/keycloak/keycloak:26.8.2   # TODO(pin)
+  db:
+    vendor: postgres
+    host: keycloak-db-rw.keycloak.svc.cluster.local
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-app
+      key: username
+    passwordSecret:
+      name: keycloak-db-app
+      key: password
+  http:
+    httpEnabled: true
+    httpPort: 8080
+  hostname:
+    # laptop profile; the cloud-gpu overlay patches this to https://auth.eacp.example.com
+    hostname: http://auth.127.0.0.1.sslip.io:8080
+    strict: false
+  proxy:
+    headers: xforwarded
+  features:
+    enabled:
+      - token-exchange
+      - admin-fine-grained-authz
+      - identity-assertion-jwt
+  additionalOptions:
+    - name: log-level
+      value: info
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { cpu: "2", memory: 1536Mi }

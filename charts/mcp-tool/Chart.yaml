@@ -1,0 +1,17 @@
+apiVersion: v2
+name: mcp-tool
+description: Expands one eacp ToolManifest into the Kubernetes objects that onboard an MCP server behind agentgateway with policy, identity, network and secret wiring.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/lum-sdeusch/enterprise-ai-control-plane
+sources:
+  - https://github.com/lum-sdeusch/enterprise-ai-control-plane
+keywords:
+  - mcp
+  - agentgateway
+  - opa
+  - kmcp
+annotations:
+  eacp.dev/renders: "kmcp MCPServer or Deployment, Service, AgentgatewayBackend, HTTPRoute, AgentgatewayPolicy (authn, guardrails, token exchange), NetworkPolicy, ExternalSecret"

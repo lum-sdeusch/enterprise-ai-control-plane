@@ -1,0 +1,98 @@
+# Values for the open-telemetry/opentelemetry-collector Helm chart (contrib image).
+# One pipeline in, three stores out: Langfuse for GenAI spans, Jaeger for every span, ClickHouse
+# for the gateway's access logs. Redaction runs before any exporter (ADR 0009).
+mode: deployment
+image:
+  repository: otel/opentelemetry-collector-contrib
+  # TODO(pin): pin by digest; contrib v0.164.x verified on 2026-11-06.
+  tag: "0.164.1"
+replicaCount: 1
+fullnameOverride: otel-collector
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: "1", memory: 1Gi }
+ports:
+  otlp:
+    enabled: true
+  otlp-http:
+    enabled: true
+extraEnvs:
+  - name: LANGFUSE_BASIC_AUTH
+    valueFrom:
+      secretKeyRef:
+        name: langfuse-otlp
+        key: basic-auth   # base64(public_key:secret_key), delivered by External Secrets Operator
+  - name: CLICKHOUSE_LOGS_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: clickhouse-logs-writer
+        key: password
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  processors:
+    memory_limiter:
+      check_interval: 1s
+      limit_percentage: 80
+      spike_limit_percentage: 20
+    # Redaction before storage. Attribute keys are allowed through; values matching the
+    # patterns are masked. Extend the list with the organisation's own identifiers.
+    redaction:
+      allow_all_keys: true
+      blocked_values:
+        - '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'                   # email
+        - '\b(?:\+?\d{1,3}[ -]?)?(?:\(\d{2,4}\)[ -]?)?\d{3,4}[ -]?\d{3,4}\b'  # phone
+        - '\b(?:\d[ -]*?){13,19}\b'                                           # card numbers
+        - 'AKIA[0-9A-Z]{16}'                                                  # AWS access key id
+        - 'ghp_[A-Za-z0-9]{36}'                                               # GitHub PAT
+        - 'sk-ant-[A-Za-z0-9_-]{20,}'                                         # Anthropic key
+        - 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'     # JWT
+        - '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+      summary: debug
+    batch:
+      timeout: 2s
+      send_batch_size: 512
+    # GenAI spans go to Langfuse; the filter keeps infrastructure-only spans out of it.
+    filter/genai:
+      error_mode: ignore
+      traces:
+        span:
+          - 'attributes["gen_ai.operation.name"] == nil and attributes["mcp.method.name"] == nil and attributes["eacp.policy.decision"] == nil'
+  exporters:
+    otlp/jaeger:
+      endpoint: jaeger-collector.telemetry.svc.cluster.local:4317
+      tls:
+        insecure: true
+    otlphttp/langfuse:
+      endpoint: http://langfuse-web.telemetry.svc.cluster.local:3000/api/public/otel
+      headers:
+        Authorization: "Basic ${env:LANGFUSE_BASIC_AUTH}"
+    clickhouse/logs:
+      endpoint: tcp://clickhouse.telemetry.svc.cluster.local:9000
+      database: eacp_logs
+      username: logs_writer
+      password: ${env:CLICKHOUSE_LOGS_PASSWORD}
+      logs_table_name: gateway_access
+      ttl: 720h
+      create_schema: true
+    debug:
+      verbosity: basic
+  service:
+    pipelines:
+      traces/all:
+        receivers: [otlp]
+        processors: [memory_limiter, redaction, batch]
+        exporters: [otlp/jaeger]
+      traces/genai:
+        receivers: [otlp]
+        processors: [memory_limiter, redaction, filter/genai, batch]
+        exporters: [otlphttp/langfuse]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, redaction, batch]
+        exporters: [clickhouse/logs]

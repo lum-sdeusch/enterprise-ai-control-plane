@@ -1,0 +1,59 @@
+# The scheduled agent from agents/nightly-triage/manifest.yaml. Its Kubernetes service-account
+# token (audience: keycloak) is federated into Keycloak to obtain the agent's own access token
+# (ADR 0023). No external model, no exfiltration-capable tools, confidential ceiling.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nightly-triage
+  namespace: demo
+  annotations:
+    eacp.dev/agent: nightly-triage
+    eacp.dev/owner: support-leads@example.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-triage
+  namespace: demo
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: nightly-triage
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: agent
+              image: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/agent-nightly-triage@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+              env:
+                - { name: EACP_GATEWAY_URL, value: "http://agentgateway-proxy.agentgateway-system.svc.cluster.local:8080" }
+                - { name: EACP_KEYCLOAK_TOKEN_URL, value: "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/eacp/protocol/openid-connect/token" }
+                - { name: EACP_CLIENT_ID, value: agent-nightly-triage }
+                - { name: EACP_SA_TOKEN_FILE, value: /var/run/secrets/eacp/token }
+                - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.telemetry.svc.cluster.local:4318" }
+                - { name: OTEL_SERVICE_NAME, value: agent-nightly-triage }
+              volumeMounts:
+                - name: sa-token
+                  mountPath: /var/run/secrets/eacp
+                  readOnly: true
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { cpu: "1", memory: 512Mi }
+          volumes:
+            - name: sa-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: keycloak
+                      expirationSeconds: 600
+                      path: token

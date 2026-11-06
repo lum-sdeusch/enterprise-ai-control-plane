@@ -1,0 +1,36 @@
+# Platform wiring for the cloud-gpu profile: EKS with the NVIDIA GPU Operator, vLLM-served
+# models, real hostnames behind TLS. Replace the example.com hosts with your own.
+platform:
+  profile: cloud-gpu
+  gateway:
+    name: agentgateway-proxy
+    namespace: agentgateway-system
+    publicUrl: https://gw.eacp.example.com
+  adapter:
+    name: eacp-adapter
+    namespace: eacp-system
+    grpcPort: 4445
+    httpPort: 8080
+  keycloak:
+    issuer: https://auth.eacp.example.com/realms/eacp
+    serviceName: keycloak-service
+    namespace: keycloak
+    port: 8080
+    realm: eacp
+    mcpAudience: eacp-mcp
+    jwksPath: /realms/eacp/protocol/openid-connect/certs
+    tokenPath: /realms/eacp/protocol/openid-connect/token
+    gatewayClientId: eacp-gateway
+    gatewayClientSecretName: eacp-gateway-oauth-client
+    gatewayClientSecretPath: eacp/gateway/oauth-client
+  secrets:
+    clusterSecretStore: openbao
+  kmcp:
+    port: 3000
+    path: /mcp
+    podLabelKey: app.kubernetes.io/name
+  networkPolicy:
+    # EKS with the VPC CNI has no FQDN policies; switch to cilium if the cluster runs Cilium.
+    fqdn: none
+  podSecurity:
+    runAsUser: 10001

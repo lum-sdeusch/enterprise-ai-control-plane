@@ -1,0 +1,25 @@
+{
+  "config": {
+    "classification_order": ["public", "internal", "confidential", "restricted"],
+    "thresholds": {
+      "injection_block": 0.8,
+      "injection_taint": 0.5
+    },
+    "routing": {
+      "public": ["external", "inhouse"],
+      "internal": ["external", "inhouse"],
+      "confidential": ["inhouse"],
+      "restricted": ["inhouse"]
+    },
+    "models": {
+      "external": "eacp-external",
+      "inhouse": "eacp-inhouse"
+    },
+    "approval": {
+      "ttl_seconds": 900
+    },
+    "taint": {
+      "window_seconds": 1800
+    }
+  }
+}

@@ -1,0 +1,37 @@
+# Only images this repository's CI signed (keyless, GitHub OIDC) may run as eacp components or
+# as tool servers built here. Third-party tool images are covered by require-digests.yaml and
+# the tool gate's cosign check in CI; add their publishers' identities here as they adopt signing.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: eacp-verify-images
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-eacp-images
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: eacp.dev/team
+                    operator: Exists
+          - resources:
+              kinds: [Pod]
+              namespaces: [eacp-system]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/lum-sdeusch/enterprise-ai-control-plane/*"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/lum-sdeusch/enterprise-ai-control-plane/.github/workflows/pr.yaml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev

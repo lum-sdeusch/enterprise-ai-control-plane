@@ -1,0 +1,226 @@
+# Wave -3 and -2: things everything else depends on. Each is a plain Application so a reader
+# can see exactly which upstream chart or manifest set is in play.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eacp-generated
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/generated
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kubernetes-sigs/gateway-api.git
+    targetRevision: v1.4.0   # TODO(verify): the Gateway API release agentgateway v1.7 targets
+    path: config/crd/standard
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }
+    syncOptions: [ServerSideApply=true, Replace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.18.2   # TODO(verify)
+    helm:
+      values: |
+        crds:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.7.0   # TODO(verify): chart for Kyverno 1.19.x
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-secrets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 0.20.1   # TODO(verify)
+    helm:
+      values: |
+        installCRDs: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://openbao.github.io/openbao-helm
+    chart: openbao
+    targetRevision: 0.17.0   # TODO(verify): chart for OpenBao 2.7
+    helm:
+      values: |
+        server:
+          standalone:
+            enabled: true
+            config: |
+              ui = true
+              listener "tcp" {
+                address = "[::]:8200"
+                tls_disable = 1
+              }
+              storage "raft" {
+                path = "/openbao/data"
+              }
+          dataStorage:
+            size: 2Gi
+        injector:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudnative-pg
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.26.0   # TODO(verify)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/keycloak/keycloak-k8s-resources.git
+    targetRevision: "26.8.2"   # TODO(verify): tag layout of keycloak-k8s-resources
+    path: kubernetes
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentgateway-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: cr.agentgateway.dev/charts
+    chart: agentgateway-crds
+    targetRevision: 1.7.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kmcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    # TODO(verify): kmcp's published Helm chart location and version; `kmcp install` is the
+    # documented CLI path.
+    repoURL: ghcr.io/kagent-dev/kmcp/helm
+    chart: kmcp
+    targetRevision: 0.10.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kmcp-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

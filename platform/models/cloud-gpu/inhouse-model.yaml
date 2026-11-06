@@ -1,0 +1,18 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: eacp-inhouse
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  visibility: Internal
+  provider: OpenAI
+  baseURL: http://vllm-inhouse.models.svc.cluster.local:8000/v1
+  policies:
+    transformations:
+      - field: model
+        expression: '"inhouse"'

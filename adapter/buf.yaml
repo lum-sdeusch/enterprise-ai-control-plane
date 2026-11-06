@@ -1,0 +1,12 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  ignore:
+    # Vendored from agentgateway (Apache-2.0); not linted against our conventions.
+    - proto/extmcp
+breaking:
+  use:
+    - FILE

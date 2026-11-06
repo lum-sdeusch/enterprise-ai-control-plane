@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eacp.dev/schemas/v1alpha1/team-manifest.schema.json",
+  "title": "TeamManifest",
+  "description": "A team is the tenancy dimension: identity groups, approver groups, model classes, budgets and the namespace its tools run in.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "eacp.dev/v1alpha1" },
+    "kind": { "const": "TeamManifest" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "owner"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },
+        "owner": { "type": "string", "format": "email" },
+        "description": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groups", "approverGroups", "allowedModelClasses", "budgets", "defaultClearance"],
+      "properties": {
+        "groups": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 }, "description": "Identity groups whose members belong to this team. The first is the team's primary group and is written into the team claim." },
+        "approverGroups": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "allowedModelClasses": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["external", "inhouse"] } },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokensPerUserPerDay", "tokensPerTeamPerDay"],
+          "properties": {
+            "tokensPerUserPerDay": { "type": "integer", "minimum": 1000 },
+            "tokensPerTeamPerDay": { "type": "integer", "minimum": 1000 }
+          }
+        },
+        "defaultClearance": { "enum": ["public", "internal", "confidential", "restricted"] },
+        "namespace": { "type": "string", "pattern": "^team-[a-z0-9-]+$", "description": "Defaults to team-<name>." }
+      }
+    }
+  }
+}

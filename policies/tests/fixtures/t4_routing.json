@@ -1,0 +1,52 @@
+{
+  "t4_routing_restricted": {
+    "phase": "llm_route",
+    "subject": {
+      "sub": "alice",
+      "groups": ["support"],
+      "team": "support",
+      "clearance": "restricted",
+      "data_label": null,
+      "act": {"client_id": "agent-support-assistant"}
+    },
+    "agent": "support-assistant",
+    "findings": {"pii": [], "secrets": [], "injection": {"score": 0.01, "label": "safe", "categories": []}, "sensitivity": null},
+    "taint": {"touched_pii": true, "touched_restricted": true, "touched_untrusted_content": false},
+    "llm": {"requested_model": "eacp-auto"},
+    "conversation_id": "conv-route-restricted",
+    "trace_id": "trace-route-restricted"
+  },
+  "t4_routing_public": {
+    "phase": "llm_route",
+    "subject": {
+      "sub": "alice",
+      "groups": ["support"],
+      "team": "support",
+      "clearance": "restricted",
+      "data_label": null,
+      "act": {"client_id": "agent-support-assistant"}
+    },
+    "agent": "support-assistant",
+    "findings": {"pii": [], "secrets": [], "injection": {"score": 0.01, "label": "safe", "categories": []}, "sensitivity": {"label": "public", "confidence": 0.9}},
+    "taint": {"touched_pii": false, "touched_restricted": false, "touched_untrusted_content": false},
+    "llm": {"requested_model": "eacp-auto"},
+    "conversation_id": "conv-route-public",
+    "trace_id": "trace-route-public"
+  },
+  "t4_routing_scheduled_agent": {
+    "phase": "llm_route",
+    "subject": {
+      "sub": "service-account-agent-nightly-triage",
+      "groups": [],
+      "team": "support",
+      "clearance": "confidential",
+      "data_label": null
+    },
+    "agent": "nightly-triage",
+    "findings": {"pii": [], "secrets": [], "injection": {"score": 0.0, "label": "safe", "categories": []}, "sensitivity": {"label": "public", "confidence": 0.9}},
+    "taint": {"touched_pii": false, "touched_restricted": false, "touched_untrusted_content": false},
+    "llm": {"requested_model": "eacp-auto"},
+    "conversation_id": "conv-route-scheduled",
+    "trace_id": "trace-route-scheduled"
+  }
+}

@@ -1,0 +1,27 @@
+# Restricted Pod Security in every team namespace and in eacp-system, enforced by Kyverno so the
+# violation is reported with the rule that failed. The namespaces also carry the PSA label as a
+# second line.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: eacp-restricted-pod-security
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: restricted
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: eacp.dev/team
+                    operator: Exists
+          - resources:
+              kinds: [Pod]
+              namespaces: [eacp-system]
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest

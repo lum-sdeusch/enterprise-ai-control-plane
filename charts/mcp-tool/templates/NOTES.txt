@@ -1,0 +1,13 @@
+eacp tool "{{ include "mcp-tool.name" . }}" (team {{ .Values.metadata.team }}, owner {{ .Values.metadata.owner }})
+
+  transport        {{ .Values.spec.transport }}{{ if eq .Values.spec.transport "stdio" }} (kmcp MCPServer){{ else }} (Deployment){{ end }}
+  namespace        {{ include "mcp-tool.namespace" . }}
+  endpoint         {{ include "mcp-tool.resourceUrl" . }}
+  aggregate        {{ .Values.platform.gateway.publicUrl }}/mcp  (tools prefixed {{ include "mcp-tool.name" . }}_)
+  entitled groups  {{ if .Values.spec.requiredGroups }}{{ join ", " .Values.spec.requiredGroups }}{{ else }}any authenticated caller{{ end }}
+  credentials      {{ .Values.spec.credentials.mode }}
+  tools            {{ len .Values.spec.tools }} declared, pinned {{ .Values.spec.pins.tools }}
+
+Every tools/call on this server passes through {{ .Values.platform.adapter.name }}.{{ .Values.platform.adapter.namespace }}
+(request and response phases) and is decided by OPA. Listings are filtered to entitled tools and
+checked against the pinned hash.

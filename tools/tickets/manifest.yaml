@@ -1,0 +1,43 @@
+apiVersion: eacp.dev/v1alpha1
+kind: ToolManifest
+metadata:
+  name: tickets
+  team: support
+  owner: support-platform@example.com
+  description: Demo ticketing MCP server (demo/servers/tickets, FastMCP). In-memory store seeded with sample tickets.
+spec:
+  image: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/demo-tickets@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  transport: http
+  http:
+    port: 8000
+    path: /mcp
+  egress: []
+  credentials:
+    mode: none
+  requiredGroups: [support]
+  outputTrust: trusted
+  tools:
+    - name: list_tickets
+      description: List open tickets with id, title and status.
+      riskTier: low
+      capability: read
+      outputClassification: internal
+    - name: get_ticket
+      description: Fetch one ticket including the customer's message body.
+      riskTier: low
+      capability: read
+      outputClassification: confidential
+    - name: create_ticket
+      description: Create a ticket.
+      riskTier: medium
+      capability: write
+      outputClassification: internal
+    - name: close_ticket
+      description: Close a ticket with a resolution note.
+      riskTier: medium
+      capability: destructive
+      outputClassification: internal
+  pins:
+    tools: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    prompts: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    resources: sha256:0000000000000000000000000000000000000000000000000000000000000000

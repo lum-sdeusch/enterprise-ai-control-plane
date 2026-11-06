@@ -1,0 +1,35 @@
+# Platform wiring for the laptop profile: kind cluster, CPU only, Ollama-served models,
+# sslip.io hostnames that resolve to the kind node's port mappings.
+platform:
+  profile: laptop
+  gateway:
+    name: agentgateway-proxy
+    namespace: agentgateway-system
+    publicUrl: http://gw.127.0.0.1.sslip.io:8080
+  adapter:
+    name: eacp-adapter
+    namespace: eacp-system
+    grpcPort: 4445
+    httpPort: 8080
+  keycloak:
+    issuer: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+    serviceName: keycloak-service
+    namespace: keycloak
+    port: 8080
+    realm: eacp
+    mcpAudience: eacp-mcp
+    jwksPath: /realms/eacp/protocol/openid-connect/certs
+    tokenPath: /realms/eacp/protocol/openid-connect/token
+    gatewayClientId: eacp-gateway
+    gatewayClientSecretName: eacp-gateway-oauth-client
+    gatewayClientSecretPath: eacp/gateway/oauth-client
+  secrets:
+    clusterSecretStore: openbao
+  kmcp:
+    port: 3000
+    path: /mcp
+    podLabelKey: app.kubernetes.io/name
+  networkPolicy:
+    fqdn: none
+  podSecurity:
+    runAsUser: 10001

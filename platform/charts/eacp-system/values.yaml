@@ -1,0 +1,74 @@
+profile: laptop
+namespace: eacp-system
+
+images:
+  # Built and signed by .github/workflows/pr.yaml. Pin by digest in a real deployment; Kyverno
+  # verifies the keyless signature on admission.
+  adapter: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/eacp-adapter:main
+  guardrails: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/eacp-guardrails:main
+  opa: openpolicyagent/opa:1.22.2-static
+  valkey: valkey/valkey:8.1-alpine
+
+gateway:
+  namespace: agentgateway-system
+  publicUrl: http://gw.127.0.0.1.sslip.io:8080
+
+keycloak:
+  issuer: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+  internalUrl: http://keycloak-service.keycloak.svc.cluster.local:8080
+  namespace: keycloak
+  # Confidential client the adapter uses for the approval page's OIDC login.
+  adapterClientId: eacp-adapter
+  adapterClientSecretName: eacp-adapter-oauth-client
+  adapterClientSecretPath: eacp/adapter/oauth-client
+
+policy:
+  # OPA pulls the bundle built by CI (scripts/build-bundle.sh) from the OCI registry.
+  bundleResource: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/policy-bundle:main
+  registryUrl: https://ghcr.io
+  pollingMinSeconds: 30
+  pollingMaxSeconds: 60
+
+telemetry:
+  namespace: telemetry
+  otlpEndpoint: otel-collector.telemetry.svc.cluster.local:4317
+  clickhouseUrl: http://clickhouse.telemetry.svc.cluster.local:8123
+  auditWriterSecretName: eacp-audit-writer
+  auditWriterSecretPath: eacp/audit/writer
+  contentCapture: true
+
+adapter:
+  replicas: 1
+  grpcPort: 9001
+  httpPort: 8080
+  servicePort: 4445
+  auditRequired: true
+  routeModels:
+    external: eacp-external
+    inhouse: eacp-inhouse
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+guardrails:
+  replicas: 1
+  port: 8000
+  # Filled per profile by the ConfigMap in platform/models/<profile>/guardrails-profile.yaml.
+  profileConfigMap: eacp-guardrails-profile
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: "2", memory: 3Gi }
+
+valkey:
+  port: 6379
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+secrets:
+  clusterSecretStore: openbao
+  anthropicApiKeySecretName: anthropic-api-key
+  anthropicApiKeyPath: eacp/gateway/anthropic
+
+podSecurity:
+  runAsUser: 10001

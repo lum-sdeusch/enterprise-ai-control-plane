@@ -1,0 +1,38 @@
+{{- /*
+Every tool call and every listing goes through the adapter's ExtMCP hook: request and response
+phases of tools/call (arguments in, results out), and the response phase of the three listings
+so the adapter can filter by entitlement and verify the pinned hashes. FailClosed is the only
+acceptable failure mode (ADR 0010).
+*/ -}}
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-{{ include "mcp-tool.name" . }}-guardrails
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: {{ include "mcp-tool.name" . }}
+  backend:
+    mcp:
+      guardrails:
+        processors:
+          - remote:
+              backendRef:
+                name: {{ .Values.platform.adapter.name }}
+                namespace: {{ .Values.platform.adapter.namespace }}
+                port: {{ .Values.platform.adapter.grpcPort }}
+              failureMode: FailClosed
+            methods:
+              tools/call: Full
+              tools/list: Response
+              prompts/list: Response
+              resources/list: Response
+# TODO(verify): the policy field that selects which request headers reach the hook
+# (McpRequest.headers is "after gateway-side allow/deny filtering") and the field that fills
+# McpRequest.metadata_context from CEL, e.g. jwt claims and request.headers["traceparent"]. Until
+# confirmed, the adapter reads identity from the forwarded Authorization header, whose signature
+# the gateway has already verified.

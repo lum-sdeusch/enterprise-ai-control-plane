@@ -1,0 +1,40 @@
+# LibreChat application config (mounted by demo/librechat/values.yaml).
+# Two things only: the gateway's LLM endpoint as a custom OpenAI-compatible endpoint, and the
+# gateway's single MCP endpoint over OAuth. Users log in through Keycloak (OPENID_* env in
+# values.yaml).
+version: 1.2.1
+cache: true
+
+endpoints:
+  custom:
+    - name: "eacp"
+      # Service credential for the LLM path (ADR 0041, option b): the gateway trusts the user id
+      # header only from LibreChat's own identity. Replace with per-user token forwarding once
+      # LibreChat's placeholder headers are verified to carry one.
+      apiKey: "${EACP_LLM_SERVICE_TOKEN}"
+      baseURL: "http://agentgateway-proxy.agentgateway-system.svc.cluster.local:8080/v1"
+      models:
+        default: ["eacp-auto", "eacp-inhouse"]
+        fetch: false
+      titleConvo: true
+      titleModel: "eacp-inhouse"
+      headers:
+        # TODO(verify): LibreChat placeholder names for the user and conversation.
+        x-eacp-user: "{{LIBRECHAT_USER_ID}}"
+        x-eacp-user-email: "{{LIBRECHAT_USER_EMAIL}}"
+        x-eacp-conversation-id: "{{LIBRECHAT_CONVERSATION_ID}}"
+
+mcpServers:
+  eacp:
+    type: streamable-http
+    url: "http://gw.127.0.0.1.sslip.io:8080/mcp"
+    timeout: 60000
+    # OAuth 2.1 is discovered from the gateway's protected-resource metadata; dynamic client
+    # registration is proxied to Keycloak by agentgateway. If DCR is disabled, set the
+    # pre-registered client here.
+    # TODO(verify): LibreChat 0.8.x oauth keys for a pre-registered client.
+    # oauth:
+    #   client_id: librechat-mcp
+    #   client_secret: "${EACP_MCP_CLIENT_SECRET}"
+    headers:
+      x-eacp-conversation-id: "{{LIBRECHAT_CONVERSATION_ID}}"

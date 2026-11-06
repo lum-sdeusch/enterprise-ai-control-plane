@@ -1,0 +1,123 @@
+# Default deny in eacp-system, then exactly the flows the design describes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eacp-adapter
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eacp-adapter
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # The gateway calls the hook, the prompt guard and the routing callout; approvers open the
+    # approval page through the gateway too.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.gateway.namespace }}
+      ports:
+        - port: {{ .Values.adapter.grpcPort }}
+        - port: {{ .Values.adapter.httpPort }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eacp-guardrails
+      ports:
+        - port: {{ .Values.guardrails.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valkey
+      ports:
+        - port: {{ .Values.valkey.port }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.telemetry.namespace }}
+      ports:
+        - port: 8123   # ClickHouse HTTP
+        - port: 4317   # OTLP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.keycloak.namespace }}
+      ports:
+        - port: 8080   # OIDC for the approval page
+    # OPA sidecar pulls the policy bundle from the registry.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+      ports:
+        - port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eacp-guardrails
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eacp-guardrails
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eacp-adapter
+      ports:
+        - port: {{ .Values.guardrails.port }}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: models
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.telemetry.namespace }}
+      ports:
+        - port: 4317
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valkey
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eacp-adapter
+      ports:
+        - port: {{ .Values.valkey.port }}

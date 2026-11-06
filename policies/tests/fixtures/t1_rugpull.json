@@ -1,0 +1,21 @@
+{
+  "t1_rugpull": {
+    "phase": "request",
+    "subject": {
+      "sub": "alice",
+      "groups": ["support"],
+      "team": "support",
+      "clearance": "restricted",
+      "act": {"client_id": "agent-support-assistant"}
+    },
+    "agent": "support-assistant",
+    "tool": {"server": "poisoned-demo", "name": "summarize"},
+    "arguments": {"text": "Quarterly numbers look fine."},
+    "findings": {"pii": [], "secrets": [], "injection": {"score": 0.02, "label": "safe", "categories": []}},
+    "taint": {"touched_pii": false, "touched_restricted": false, "touched_untrusted_content": false},
+    "pinning": {"tools": "sha256:9f2c1b7e4d6a8c0b5e3f7a1d9c2b4e6f8a0c1d3e5f7b9d1f3a5c7e9b1d3f5a7c"},
+    "approval": {"approved": false, "approver": null, "approver_groups": []},
+    "conversation_id": "conv-rugpull",
+    "trace_id": "trace-rugpull"
+  }
+}

@@ -1,0 +1,136 @@
+# GPU model serving for the cloud-gpu profile on EKS with the NVIDIA GPU Operator. Three vLLM
+# deployments: the in-house general model, Qwen3Guard-Gen 4B for injection and jailbreak
+# classification, and Granite Guardian 4.1 8B as the judge for high-risk tools. Lev (sensitivity
+# labelling) is optional and behind a flag; add a fourth deployment to enable it (ADR 0037).
+# TODO(pin): pin the vLLM image and Hugging Face revisions.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hf-token
+  namespace: models
+type: Opaque
+stringData:
+  token: "REPLACE_VIA_EXTERNAL_SECRETS"   # delivered from eacp/models/hf-token in production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-inhouse
+  namespace: models
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: vllm-inhouse }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: vllm-inhouse }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.2
+          args: ["--model", "Qwen/Qwen3-32B", "--served-model-name", "inhouse", "--max-model-len", "32768", "--gpu-memory-utilization", "0.90"]
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+          ports:
+            - containerPort: 8000
+          resources:
+            limits: { nvidia.com/gpu: 1 }
+            requests: { cpu: "4", memory: 32Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 120
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-inhouse
+  namespace: models
+spec:
+  selector: { app.kubernetes.io/name: vllm-inhouse }
+  ports:
+    - port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-guard
+  namespace: models
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: vllm-guard }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: vllm-guard }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.2
+          args: ["--model", "Qwen/Qwen3Guard-Gen-4B", "--served-model-name", "guard", "--max-model-len", "8192"]
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+          ports:
+            - containerPort: 8000
+          resources:
+            limits: { nvidia.com/gpu: 1 }
+            requests: { cpu: "2", memory: 16Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 90
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-guard
+  namespace: models
+spec:
+  selector: { app.kubernetes.io/name: vllm-guard }
+  ports:
+    - port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-judge
+  namespace: models
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: vllm-judge }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: vllm-judge }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.2
+          args: ["--model", "ibm-granite/granite-guardian-4.1-8b", "--served-model-name", "judge", "--max-model-len", "8192"]
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+          ports:
+            - containerPort: 8000
+          resources:
+            limits: { nvidia.com/gpu: 1 }
+            requests: { cpu: "2", memory: 24Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 90
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-judge
+  namespace: models
+spec:
+  selector: { app.kubernetes.io/name: vllm-judge }
+  ports:
+    - port: 8000

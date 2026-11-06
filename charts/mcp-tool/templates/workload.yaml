@@ -1,0 +1,108 @@
+{{- /*
+stdio servers run under kmcp: the MCPServer controller adds the transport-adapter sidecar that
+exposes the process over Streamable HTTP on platform.kmcp.port. http servers run as a plain
+Deployment. Both are restricted-PSA compliant so Kyverno admits them.
+*/ -}}
+{{- if eq .Values.spec.transport "stdio" }}
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: {{ include "mcp-tool.name" . }}
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+  annotations:
+    eacp.dev/owner: {{ .Values.metadata.owner | quote }}
+    eacp.dev/pins.tools: {{ .Values.spec.pins.tools | quote }}
+spec:
+  deployment:
+    image: {{ .Values.spec.image | quote }}
+    cmd: {{ .Values.spec.stdio.cmd | quote }}
+    {{- with .Values.spec.stdio.args }}
+    args:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    port: {{ .Values.platform.kmcp.port }}
+    replicas: {{ .Values.spec.replicas | default 1 }}
+    {{- with .Values.spec.env }}
+    # TODO(verify): kmcp deployment.env shape (map or list) against the kagent.dev/v1alpha1 API reference.
+    env:
+      {{- range . }}
+      {{ .name }}: {{ .value | quote }}
+      {{- end }}
+    {{- end }}
+    {{- if eq .Values.spec.credentials.mode "service" }}
+    secretRefs:
+      - {{ include "mcp-tool.credentialsSecret" . }}
+    {{- end }}
+    {{- with .Values.spec.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  transportType: stdio
+  stdioTransport: {}
+  {{- with .Values.platform.kmcp.adapterImage }}
+  initContainer:
+    image: {{ . | quote }}
+  {{- end }}
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mcp-tool.name" . }}
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+  annotations:
+    eacp.dev/owner: {{ .Values.metadata.owner | quote }}
+    eacp.dev/pins.tools: {{ .Values.spec.pins.tools | quote }}
+spec:
+  replicas: {{ .Values.spec.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "mcp-tool.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mcp-tool.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "mcp-tool.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: mcp
+          image: {{ .Values.spec.image | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- include "mcp-tool.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: mcp
+              containerPort: {{ .Values.spec.http.port }}
+              protocol: TCP
+          {{- with .Values.spec.env }}
+          env:
+            {{- range . }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if eq .Values.spec.credentials.mode "service" }}
+          envFrom:
+            - secretRef:
+                name: {{ include "mcp-tool.credentialsSecret" . }}
+          {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: mcp
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: mcp
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          {{- with .Values.spec.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

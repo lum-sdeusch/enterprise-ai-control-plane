@@ -1,0 +1,28 @@
+# Tool servers run only from images pinned by digest, which is what the manifest schema already
+# demands; this closes the gap for anything that bypasses the chart.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: eacp-require-image-digests
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: digest-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: eacp.dev/team
+                    operator: Exists
+      validate:
+        message: "images in team namespaces must be pinned by digest (image@sha256:...)"
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              image: "*@sha256:*"
+          - list: request.object.spec.initContainers || `[]`
+            pattern:
+              image: "*@sha256:*"

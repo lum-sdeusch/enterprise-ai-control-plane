@@ -1,0 +1,840 @@
+# Source of the architecture decision records. One entry per decision from the three design
+# rounds of 2026-11-06 (docs/design.md section 12). scripts/gen-adrs.py renders docs/adr/*.md.
+#
+# Fields: id, title, round, status, context, decision, alternatives[{option, reason}],
+# consequences[], verify[] (open build-time checks), related[].
+
+- id: 1
+  title: Publish a repository and a long-form article for architects
+  round: 1
+  context: |
+    The deliverable shapes every later choice: a conference talk tolerates hand-waving, a sales
+    asset tolerates a single cloud, a repository that engineers clone tolerates neither. The
+    primary reader was chosen as the platform or security architect who must defend the design
+    internally; engineers who run it are the secondary reader.
+  decision: |
+    Publish a GitHub repository under Apache-2.0 plus a long-form article. The README is the
+    article's skeleton so the two cannot drift. Control mappings and the threat model live in
+    the repository, not only in the article.
+  alternatives:
+    - option: Talk or whitepaper only
+      reason: Cannot be verified by the reader; a reference architecture that does not boot is a diagram.
+    - option: Sales asset
+      reason: Would bias component choices toward a vendor's stack and away from the open-source rule.
+  consequences:
+    - Every claim in the article must be reproducible from the repository.
+    - Rejected alternatives are documented with their license or feature-gate reason, since that is what architects are asked.
+
+- id: 2
+  title: Open source means OSI-approved licenses with a documented open-core boundary
+  round: 1
+  context: |
+    "All open-source components" was doing a lot of work. Several popular candidates are
+    open-core with the needed features gated (LiteLLM's JWT auth and audit logs), source
+    available rather than open (Arize Phoenix under Elastic License 2.0, HashiCorp Vault under
+    BUSL), custom-licensed (Open WebUI's branding clause, Lobe Chat's community license), or
+    copyleft (Zitadel on AGPL-3.0, Redis 8 on AGPL/RSAL/SSPL).
+  decision: |
+    OSI-approved licenses only, plus open-core projects when every feature actually used sits
+    in the OSI-licensed tier and the boundary is written down per component. AGPL is allowed
+    for standalone services that are never linked into code. Source-available licenses are
+    excluded. The control plane is open source; the models are mixed: Anthropic through the
+    gateway plus at least one self-hosted open-weight model.
+  alternatives:
+    - option: Allow Elastic License 2.0 and BUSL
+      reason: They are not open source by the OSI definition and the claim in the title would be false.
+    - option: Open-weight models only
+      reason: Would make the data-residency routing demo moot and the assistant worse than what employees already use.
+  consequences:
+    - LibreChat's MongoDB dependency (SSPL) is the one known exception and is tracked as an open item with FerretDB as the spike.
+    - Component versions and gating were verified on 2026-11-06 and recorded in docs/research.
+
+- id: 3
+  title: Kubernetes only, cloud-agnostic, with a kind laptop profile and an EKS GPU profile
+  round: 1
+  context: |
+    docker-compose is easier to try, but the credible parts of the story are Kubernetes-native:
+    operator-driven onboarding, sandboxed pods, network policies, GitOps, and the strongest
+    gateway candidates. Two deployment paths would diverge within weeks.
+  decision: |
+    Kubernetes only. The laptop profile brings up a kind cluster with one command; the cloud-gpu
+    profile targets EKS with the NVIDIA GPU Operator. Cloud-specific parts are confined to the
+    profile overlays.
+  alternatives:
+    - option: docker-compose as well
+      reason: Doubles the maintenance and loses admission control, network policy and the operators.
+  consequences:
+    - Readers need Docker, kind, kubectl and helm; the quick start says so.
+    - Everything is a Helm chart or a kustomization so Argo CD can own it.
+
+- id: 4
+  title: LibreChat and a scheduled in-cluster agent are first-class clients; Claude Code is the tested IDE path
+  round: 1
+  context: |
+    Each client class needs its own identity flow: a chat UI needs OIDC login and token
+    passthrough, an in-cluster agent needs workload identity, an IDE agent needs OAuth 2.1 with
+    PKCE and client registration from the gateway. IDE agents are the most common MCP consumer
+    in enterprises and the hardest to govern.
+  decision: |
+    LibreChat (MIT) and a scheduled Pydantic AI agent are fully working in the POC. Claude Code
+    is the one IDE client tested and documented.
+  alternatives:
+    - option: IDE-first
+      reason: Would leave the autonomous-agent identity path untested, which is the hardest part of the identity design.
+  consequences:
+    - "LibreChat caveats are recorded: no elicitation rendering, MCP SDK at spec 2025-11-25, no Client ID Metadata Documents; the gateway's stateful mode bridges the spec gap."
+  related: [33, 42]
+
+- id: 5
+  title: OWASP threat taxonomies and SOC 2, ISO 42001 and EU AI Act Article 12 as mappings
+  round: 1
+  context: |
+    "Compliance" without named frameworks is marketing. The threats the demo defeats must be
+    named from a taxonomy readers already use.
+  decision: |
+    Threat taxonomy: OWASP Top 10 for LLM Applications and OWASP Top 10 for Agentic
+    Applications. Control mappings: SOC 2 control families, ISO/IEC 42001, EU AI Act Article 12
+    record keeping. HIPAA and PCI DSS are extension notes. Five threats are demonstrated on
+    stage; the rest are a table.
+  alternatives:
+    - option: Map to every framework a prospect might name
+      reason: Each mapping is a reviewed document; unreviewed mappings are a liability.
+  consequences:
+    - docs/threat-model.md and docs/control-mapping.md are seeds that a compliance reviewer must check against the licensed texts before publication.
+
+- id: 6
+  title: Every token carries the user and an actor chain; scheduled agents have a service identity with a named owner
+  round: 1
+  context: |
+    "Agent identity" can mean an agent acting purely for a user, an agent as its own principal,
+    or both. Policies need both: who the human is and which software acted. Autonomous agents
+    with no human in the loop break the delegation-only model.
+  decision: |
+    Tokens carry the user subject plus an actor chain (user, then agent, then gateway) through
+    RFC 8693 token exchange with an actor token. Scheduled agents authenticate with a workload
+    identity and their manifest names a human owner, so there is always someone accountable.
+  alternatives:
+    - option: Delegation only
+      reason: Cannot represent scheduled agents at all.
+    - option: Agent-only identity
+      reason: Loses the human for audit and entitlement.
+  consequences:
+    - The policy input has subject.sub, subject.groups, subject.team, subject.clearance and subject.act.
+    - Keycloak's delegation flow is preview in 26.8, so a two-header fallback exists behind a flag.
+  related: [23]
+
+- id: 7
+  title: Deterministic policy decision point separated from probabilistic guardrails, one PDP for both pathways
+  round: 1
+  context: |
+    OPA evaluates claims, JSON, regexes and text in microseconds, reproducibly, with unit tests.
+    PII detection and LLM judges take 50 ms to seconds and are not reproducible. Invoking
+    classifiers from inside a policy produces a slow, untestable policy with hidden network
+    calls.
+  decision: |
+    A guardrail stage runs first and emits structured findings. The PDP then decides from
+    claims, manifests, findings and taint, producing one decision document with allow, deny,
+    redact, require-approval and route outcomes. One PDP and one policy repository serve both
+    enforcement points, the MCP path and the LLM path.
+  alternatives:
+    - option: Classifiers inside OPA via http.send
+      reason: Non-deterministic policies cannot be unit tested or reproduced from the audit log.
+    - option: Two PDPs
+      reason: Policy drift between the prompt path and the tool path is exactly the failure mode enterprises have today.
+  consequences:
+    - policies/README.md defines the input and output contracts; thresholds are policy data, so changing one is a reviewed change.
+    - The guardrail service never decides; its outputs are data.
+
+- id: 8
+  title: Session taint tracking
+  round: 1
+  context: |
+    The attacks that matter are only visible across calls: read a customer record in call three,
+    fetch a URL with two kilobytes of query string in call seven. Each call looks fine alone.
+  decision: |
+    The adapter keeps three boolean labels per conversation (touched_pii, touched_restricted,
+    touched_untrusted_content) in Valkey and passes them to the PDP on every call. Tools declare
+    a capability class; the headline rule denies exfiltration-capable tools after restricted
+    data was read.
+  alternatives:
+    - option: Stateless per-call checks only
+      reason: Misses the chaining attacks the demo is built to show.
+    - option: Full information-flow control
+      reason: Far beyond a POC; noted as future work.
+  consequences:
+    - Session identity had to be defined because the 2026-07-28 MCP spec removed protocol sessions (ADR 0027).
+    - Taint is written on response phases and read on request phases, including when a result was blocked.
+  related: [27]
+
+- id: 9
+  title: Redact at the collector, keep a separate append-only audit log, make content capture a switch
+  round: 1
+  context: |
+    Prompts and tool results in spans make the trace store the most sensitive datastore in the
+    company. Debugging traces are sampled and purged in days; compliance records must be
+    unsampled and kept.
+  decision: |
+    The OpenTelemetry Collector's redaction processor masks PII and secrets before any exporter.
+    The adapter writes an unsampled audit record per decision phase to an insert-only store,
+    separate from traces. Content capture into spans is a per-environment switch, on in the POC.
+  alternatives:
+    - option: Capture everything and lock the trace store down
+      reason: Access control is not minimisation; the data would still be there.
+    - option: Metadata only
+      reason: Loses the ability to show what the guardrails saw during a demo or an investigation.
+  consequences:
+    - The adapter is the only content-capture point (ADR 0021).
+    - OPA decision logs are masked by a system.log policy so arguments never reach the log store.
+
+- id: 10
+  title: Fail closed everywhere, with latency budgets per check class
+  round: 1
+  context: |
+    Fail-open is what every operations team wants and every auditor rejects. Without budgets,
+    an LLM judge on every call adds seconds and gets ripped out within a week.
+  decision: |
+    Every hook fails closed: PDP, guardrails, state store or audit store unavailable means deny,
+    and the gateway processors are configured FailClosed. Budgets: deterministic checks plus PDP
+    under 20 ms, ML classifiers under 200 ms synchronous, LLM judge only for tools tagged high
+    risk, otherwise asynchronous and alert-only.
+  alternatives:
+    - option: Fail open with an alert
+      reason: Turns an outage into an unaudited bypass.
+  consequences:
+    - The adapter's unit tests cover every dependency failure.
+    - ContextForge's fail-open token revocation on database outage was one reason it was not chosen (ADR 0017).
+
+- id: 11
+  title: Anthropic plus one in-house model, with classification-aware routing
+  round: 1
+  context: |
+    A request that touched restricted data must not leave for an external provider. That is
+    the single most convincing compliance demo available and it reuses the guardrail findings.
+  decision: |
+    Both an external provider (Anthropic) and a self-hosted open-weight model. The gateway's
+    virtual model calls the adapter, which returns the model class the conversation's label
+    allows; restricted and confidential go in-house, the rest may go external.
+  alternatives:
+    - option: External only
+      reason: No credible answer to data residency.
+  consequences:
+    - agentgateway's callout selector made this native rather than a workaround (ADR 0018).
+    - The in-house model doubles as the fallback for every virtual model, so a routing outage never pushes data outward.
+
+- id: 12
+  title: Scope fence for the POC
+  round: 1
+  context: |
+    The components not in the original list each either close a real enterprise gap or double
+    the surface area.
+  decision: |
+    In scope: secrets management, MCP server hardening and supply chain, human-in-the-loop
+    approval, red-teaming in CI, cost controls, GitOps. Out of scope as documented extensions:
+    RAG with permission-aware retrieval, Agent-to-Agent gateway, semantic cache.
+  alternatives:
+    - option: Include RAG
+      reason: Permission-aware retrieval is a project of its own.
+    - option: Include A2A
+      reason: Doubles the protocol surface for no demo value.
+  consequences:
+    - docs/design.md section 10 lists the extensions so readers know they were considered.
+
+- id: 13
+  title: A small published adapter layer; two boxes in the diagram, one product may fill both
+  round: 1
+  context: |
+    Best-of-breed per box means integration code. A reference architecture should be
+    product-agnostic at the box level while being runnable with concrete products.
+  decision: |
+    A small adapter layer, published and tested in the repository. The AI gateway and the MCP
+    gateway stay two boxes in the architecture; one product may implement both.
+  alternatives:
+    - option: Zero custom code
+      reason: No candidate implemented rug-pull detection, session taint or the approval flow.
+  consequences:
+    - The budget was revised in round 2 to 2,500 to 3,000 lines across the Go adapter, the Python guardrail service and the approval page (ADR 0019).
+
+- id: 14
+  title: Named products are candidates; OPA is the catch-all policy engine
+  round: 1
+  context: |
+    The originally named registry had no runtime policy hook. Cedar is typed and formally
+    validated but has no open-source AuthZEN decision point and less ecosystem; Rego handles
+    regex, JSON and text natively and comes with decision logs, bundles and an Envoy
+    integration.
+  decision: |
+    Treat every named product as a candidate until research settles it. OPA is the PDP. Cedar is
+    documented as the choice for teams that want typed tool-authorisation policies at the server
+    edge.
+  alternatives:
+    - option: Cedar as the central PDP
+      reason: Would need a self-built decision service and gives up decision logging and bundles.
+    - option: OpenFGA
+      reason: Relationship graphs are not the problem here; attribute and content rules are.
+  consequences:
+    - Policies are Rego v1 with a single entry point and layered packages (ADR 0044).
+
+- id: 15
+  title: Onboarding is one pull request, measured by an acceptance test, with a security gate
+  round: 1
+  context: |
+    "As easy as a deployment and a configuration" needs a measurable definition or it is a
+    slogan.
+  decision: |
+    Merging one pull request containing one manifest results, within ten minutes and with zero
+    manual steps, in a deployed and sandboxed container, a registered and health-checked server,
+    tools visible only to entitled groups, policies active and traces flowing. A mandatory CI
+    gate runs before merge.
+  alternatives:
+    - option: No gate
+      reason: Would make the demo an enterprise demo in name only.
+  consequences:
+    - scripts/tool-gate.sh and the tool-gate job in CI implement the gate (ADR 0025).
+
+- id: 16
+  title: Team is a first-class dimension from day one
+  round: 1
+  context: |
+    Retrofitting tenancy is expensive; adding it to a POC is cheap.
+  decision: |
+    Identity groups map to a team; the team determines tool entitlements, budgets, approver
+    groups, model classes and trace visibility. Each team's MCP servers run in their own
+    namespace.
+  alternatives:
+    - option: Single-tenant POC
+      reason: Every later feature would need a tenancy retrofit.
+  consequences:
+    - teams/<team>/manifest.yaml exists alongside tools and agents and generates namespaces, reference grants and the Keycloak groups.
+
+- id: 17
+  title: agentgateway as the MCP gateway, kmcp as the stdio server runtime
+  round: 2
+  context: |
+    Three candidates satisfied "policy in the pathway of every tool call": agentgateway
+    (Apache-2.0, Rust, Agentic AI Foundation under the Linux Foundation, spec 2026-07-28, OAuth
+    resource-server role, upstream token exchange, gRPC pre/post hook that mutates or denies,
+    OpenTelemetry), ToolHive (Apache-2.0, Go, Cedar embedded, operator, Sigstore, but 0.x,
+    undocumented webhook payload, enterprise-gated group mapping and audit, and Cedar
+    contradicts one-PDP), and IBM ContextForge (Apache-2.0, Python, OPA and Cedar plugins, no
+    operator, fail-open revocation). The originally proposed registry had only a
+    registration-time webhook.
+  decision: |
+    agentgateway as the MCP data plane. kmcp's MCPServer CRD runs stdio servers behind the
+    transport adapter sidecar because agentgateway's own CRD cannot run stdio servers.
+    Hardening comes from Kubernetes primitives: Kyverno, pod security, network policy, cosign.
+  alternatives:
+    - option: ToolHive alone
+      reason: Second policy language at the server edge, enterprise-gated features, 0.x release cadence.
+    - option: IBM ContextForge
+      reason: No operator, hand-built stdio sidecar, fail-open behaviours to audit.
+    - option: agentic-community/mcp-gateway-registry
+      reason: No runtime policy hook, no protected resource metadata, no client registration.
+  consequences:
+    - The adapter implements agentgateway's ExtMCP protocol; the proto is vendored under adapter/proto.
+    - ToolHive is documented as the alternative for teams that want argument-level Cedar at the edge.
+  verify:
+    - "The label kmcp puts on pods it creates, so the chart's Service selects them (charts/mcp-tool values: platform.kmcp.podLabelKey)."
+    - Whether the virtual MCP backend's label selector spans namespaces.
+
+- id: 18
+  title: One gateway product for both the LLM and MCP roles
+  round: 2
+  context: |
+    agentgateway routes LLM traffic too: providers including Anthropic and custom
+    OpenAI-compatible backends, failover priority groups, virtual models with weighted,
+    failover, conditional and callout selection, token budgets keyed by JWT claims, prompt
+    guards, GenAI-convention spans. Agent Router (formerly Envoy AI Gateway, same foundation)
+    was the separate candidate. LiteLLM gates JWT auth and audit logs, Kong has no free tier
+    after 3.9, Portkey's repository went idle after its acquisition, TensorZero is archived,
+    Helicone's gateway has a GPL license file contradicting its README.
+  decision: |
+    agentgateway fills both boxes. Agent Router is documented as the drop-in for the LLM box.
+  alternatives:
+    - option: Agent Router for the LLM box
+      reason: Two CRD families, two policy models, two tracing pipelines for no capability gain.
+  consequences:
+    - Classification routing uses the virtual model callout, which is native to agentgateway.
+  verify:
+    - AgentgatewayModel provider and model fields for Anthropic.
+    - Whether a callout may target a virtual model; otherwise the adapter returns concrete model names.
+    - promptGuard target kind when models are AgentgatewayModel resources.
+
+- id: 19
+  title: The adapter is the single enforcement orchestrator, with OPA as its sidecar
+  round: 2
+  context: |
+    Chaining external authorisation to OPA for the request phase and a separate guardrail
+    service for the response phase would leave OPA blind to tool results, so post-tool policy
+    would live in a second service anyway. One adapter makes fail-closed, budgets, taint and
+    audit one coherent thing.
+  decision: |
+    One adapter implements agentgateway's ExtMCP hook, the LLM prompt-guard webhook and the
+    routing callout. For each phase it runs guardrails, reads and writes taint, queries the OPA
+    sidecar over localhost, handles approvals, writes the audit record and fails closed. Go for
+    the adapter, Python for the guardrail service. Budget revised to 2,500 to 3,000 lines.
+  alternatives:
+    - option: ext_authz chain
+      reason: Cannot see tool results; splits the fail-closed logic across services.
+  consequences:
+    - adapter/internal/pipeline is the one place to read to understand enforcement order.
+
+- id: 20
+  title: Langfuse plus Jaeger through collector fan-out
+  round: 2
+  context: |
+    Langfuse is MIT core (owned by ClickHouse), ingests OTLP, renders tool spans, sessions and
+    cost, and has OIDC single sign-on and organisation-level roles in the free tier; project
+    roles, retention policies and server-side masking are enterprise. Opik is Apache-2.0 but has
+    no user management. Phoenix is Elastic-licensed. SigNoz gates OIDC. Jaeger renders every
+    span but knows nothing about LLMs.
+  decision: |
+    The OpenTelemetry Collector exports GenAI spans to Langfuse and all spans to Jaeger. One
+    Langfuse organisation per team stands in for project roles. Retention is a ClickHouse TTL.
+    Jaeger uses Badger in the POC and OpenSearch in production notes.
+  alternatives:
+    - option: Opik behind an OIDC proxy
+      reason: No per-team visibility without user management.
+    - option: Arize Phoenix
+      reason: Elastic License 2.0 is not OSI-approved.
+  consequences:
+    - Langfuse needs S3-compatible storage and a Redis-compatible cache; SeaweedFS and Valkey are wired and must be verified (open item).
+
+- id: 21
+  title: Content is captured only in the adapter; client instrumentation stays metadata-only
+  round: 2
+  context: |
+    agentgateway puts tool arguments and results in access logs, not spans. The adapter sees
+    every argument, result, prompt and completion, so it can be the one capture point with one
+    redaction pass.
+  decision: |
+    The adapter emits opt-in GenAI content attributes after redaction when content capture is
+    on. Client SDKs are instrumented for structure and timing only, which is also what the
+    OpenTelemetry GenAI conventions recommend by default.
+  alternatives:
+    - option: Client-side capture
+      reason: N configurations and N redaction paths.
+  consequences:
+    - gen_ai.tool.call.arguments, gen_ai.tool.call.result, gen_ai.input.messages and gen_ai.output.messages are set by the adapter only.
+
+- id: 22
+  title: Audit records in a separate ClickHouse database with an insert-only role
+  round: 2
+  context: |
+    OPA decision logs and the adapter's audit events need an append-only home with their own
+    credentials. ClickHouse is already deployed for Langfuse; OpenSearch, Loki and object
+    storage with object lock were the alternatives.
+  decision: |
+    A separate ClickHouse database, eacp_audit, with an insert-only writer and a read-only
+    reader. Production exports daily to object-locked storage controlled by a different team.
+  alternatives:
+    - option: OpenSearch
+      reason: A new component for no gain in the POC.
+    - option: Object storage with object lock
+      reason: MinIO's community edition was gutted and the Apache-2.0 alternatives are young.
+  consequences:
+    - The adapter writes the record synchronously; with EACP_AUDIT_REQUIRED a failed write denies the call.
+
+- id: 23
+  title: Keycloak, with preview delegation as the primary actor-chain path
+  round: 2
+  context: |
+    Keycloak 26.8 (Apache-2.0, CNCF incubating) has standard token exchange and Kubernetes
+    service-account federation generally available; delegation with actor tokens and the act
+    claim is preview, the Identity Assertion grant behind Enterprise-Managed Authorization is
+    experimental, AuthZEN is experimental. Zitadel is ahead on delegation but AGPL. Authentik
+    gates agent accounts. Ory Hydra has no token exchange.
+  decision: |
+    Keycloak. The preview delegation flow is the primary path because it is the standard
+    RFC 8693 actor pattern a reference architecture should teach; a two-token fallback sits
+    behind a flag. In-cluster agents use Kubernetes service-account federation. SPIRE is the
+    multi-cluster extension. Enterprise-Managed Authorization is an optional flag, not the main
+    demo.
+  alternatives:
+    - option: Zitadel
+      reason: AGPL-3.0 since v3, excluded by the license rule for code the platform integrates with.
+    - option: Authentik
+      reason: Agent accounts are enterprise-only.
+  consequences:
+    - The realm is generated from manifests (ADR 0024, 0048).
+  verify:
+    - Keycloak 26.8 feature flag names for the delegation preview and identity-assertion-jwt.
+    - The service-account token exchange parameters used by demo/agent-nightly-triage.
+
+- id: 24
+  title: Git manifests are the source of truth; Keycloak is derived
+  round: 2
+  context: |
+    Owner, team, risk tier, allowed tools, model classes and output classification must live
+    somewhere reviewable. Keycloak client attributes are editable by hand; custom resources
+    would need an operator.
+  decision: |
+    Tool, agent and team manifests in Git, validated against JSON schemas, compiled by CI into
+    the OPA data bundle, the Keycloak realm import, team namespaces and reference grants.
+    Keycloak is never edited by hand.
+  alternatives:
+    - option: Keycloak attributes as source of truth
+      reason: No review, no history, no tests.
+    - option: Custom resources with an operator
+      reason: Several hundred lines of controller for what a compile step does.
+  consequences:
+    - scripts/compile-manifests.py is the only writer of policies/eacp/manifests.json, platform/keycloak/realm-import.yaml and platform/generated.
+
+- id: 25
+  title: Helm chart expansion, Kyverno admission, Trivy pinned and verified, mcp-scanner
+  round: 2
+  context: |
+    One manifest must expand into roughly seven Kubernetes objects. Kyverno graduated in CNCF in
+    March 2026 and verifies cosign signatures natively. Trivy had a supply-chain compromise in
+    March 2026 and is still Apache-2.0 and the most adopted scanner; Grype and Syft are the
+    alternatives. Cisco's mcp-scanner is Apache-2.0 and scans tool descriptions over Streamable
+    HTTP.
+  decision: |
+    A Helm chart with a JSON schema generated from the manifest schema renders the objects.
+    Kyverno enforces verified images, restricted pod security and digests, and generates
+    default-deny network policies per team namespace. Trivy, pinned by digest and
+    cosign-verified in CI, scans images; mcp-scanner scans tool descriptions.
+  alternatives:
+    - option: Kustomize components
+      reason: Weaker templating and no values schema.
+    - option: Grype and Syft
+      reason: Documented alternative; Trivy kept for adoption and feature breadth.
+  consequences:
+    - charts/mcp-tool/values.schema.json is generated; the chart cannot accept a manifest the validator rejects.
+
+- id: 26
+  title: Pin tools, prompts and resources; quarantine on mismatch
+  round: 2
+  context: |
+    No candidate implements rug-pull detection. A server that changes a tool description after
+    review is the supply-chain attack specific to MCP.
+  decision: |
+    CI pins the SHA-256 of each listing's canonical JSON into the manifest. The adapter hashes
+    every live listing; on mismatch it quarantines the server, denies all calls, empties the
+    listing, alerts and audits until a new manifest is merged. A matching listing lifts the
+    quarantine.
+  alternatives:
+    - option: Warn only
+      reason: A warning nobody reads is not a control.
+  consequences:
+    - The Go adapter and the Python pin script share a canonical form and a test vector so they can never disagree.
+
+- id: 27
+  title: Conversation id from baggage, subject-and-agent fallback, state in Valkey
+  round: 2
+  context: |
+    The 2026-07-28 MCP spec removed protocol sessions, so session identity is the platform's to
+    define. Redis 8 is no longer OSI-licensed.
+  decision: |
+    The client sets a conversation id, carried as W3C baggage or an explicit header; the
+    fallback is the pair of user subject and agent client id with a 30-minute sliding window.
+    Taint, pins, quarantine flags, route decisions and pending approvals live in Valkey (BSD-3).
+  alternatives:
+    - option: Custom header only
+      reason: Does not propagate through OpenTelemetry-instrumented clients.
+  consequences:
+    - The adapter's in-memory store exists for tests and single-replica demos only.
+
+- id: 28
+  title: Four-level deterministic classification with max semantics
+  round: 2
+  context: |
+    Routing and taint need one label per conversation turn. Sources disagree, so a merge rule is
+    needed, and the merge must be explainable to an auditor.
+  decision: |
+    Labels public, internal, confidential, restricted. Sources: the tool manifest's output
+    classification, guardrail findings (PII makes a turn confidential), conversation taint, and
+    an explicit data_label claim. The maximum wins. Clearance is a separate ceiling claim on the
+    caller, not a source.
+  alternatives:
+    - option: An ML classifier in the POC
+      reason: Not reproducible; kept optional behind a flag (ADR 0037).
+  consequences:
+    - The label travels as a span attribute and in the audit record, so routing can be proven from the trace.
+
+- id: 29
+  title: Two profiles, laptop on CPU with Ollama and cloud-gpu with vLLM
+  round: 2
+  context: |
+    The POC must run on a 16 GB laptop without a GPU and also show the full-size models on a
+    GPU node. Qwen3Guard is not in Ollama's official library, only as community GGUF files.
+  decision: |
+    Profile laptop: Ollama serving a small Qwen3 general model and Qwen3Guard-Gen 0.6B from a
+    community GGUF, judge off. Profile cloud-gpu: vLLM serving Qwen3Guard-Gen 4B, Granite
+    Guardian 4.1 8B and a larger in-house model, on EKS with the NVIDIA GPU Operator.
+  alternatives:
+    - option: Single profile
+      reason: Either unrunnable on a laptop or unconvincing on stage.
+  consequences:
+    - Model endpoints reach the guardrail service through a per-profile ConfigMap.
+  verify:
+    - The Hugging Face repository and quantisation of a Qwen3Guard-Gen 0.6B GGUF.
+    - Whether a roughly 200M-parameter DeBERTa prompt-injection classifier (89 percent at 54 ms in Red Hat's October 2026 benchmark) has a permissive license; if so it becomes the laptop default.
+
+- id: 30
+  title: OpenBao single node plus External Secrets Operator
+  round: 2
+  context: |
+    Smallest footprint was the selection criterion. OpenBao (MPL-2.0, Linux Foundation) runs as
+    one pod with integrated Raft storage; Infisical needs Postgres, Redis, a backend and a
+    frontend. SOPS has no runtime component but is not a secrets manager.
+  decision: |
+    OpenBao, single node with integrated Raft, delivered into namespaces by External Secrets
+    Operator (Apache-2.0, CNCF). The manifest chooses per tool between a shared service
+    credential and per-user delegation; one demo tool uses delegation.
+  alternatives:
+    - option: Infisical
+      reason: Four components where one will do.
+    - option: SOPS with age
+      reason: No dynamic secrets, no rotation, no audit.
+  consequences:
+    - Every ExternalSecret references the openbao ClusterSecretStore; scripts/up.sh seeds the demo paths.
+
+- id: 31
+  title: One human approver from the tool's approver group; deny-with-link then retry
+  round: 2
+  context: |
+    MCP has no approval primitive. Elicitation plus the Tasks extension's input-required state is
+    the spec-native pattern, but the Tasks extension is beta and LibreChat cannot render
+    elicitation. The one human is a designated approver, not the requester.
+  decision: |
+    The adapter denies with a structured error carrying an approval link; the approver, a member
+    of the tool manifest's approver group, signs in to the adapter's page through Keycloak and
+    approves; the agent retries the exact same call and the adapter matches it by request hash.
+    Self-approval is off unless the manifest allows it. The spec-native flow is behind a flag.
+  alternatives:
+    - option: Two-person rule
+      reason: Explicitly not wanted; one human, one approval.
+    - option: Tasks extension only
+      reason: Would fail on stage with the chosen chat UI.
+  consequences:
+    - Both the request and the decision are audited with the approver's identity.
+    - A destructive tool after untrusted content requires approval dynamically, as the prompt-injection backstop.
+
+- id: 32
+  title: Tool listings are the intersection of entitlement and the agent manifest; names are prefixed
+  round: 2
+  context: |
+    Too many tools degrade models and expose surface. Tool name collisions across servers must
+    be impossible.
+  decision: |
+    tools/list is filtered by the adapter to group entitlement intersected with the agent
+    manifest's allowed tools, the caller's clearance and the agent's classification ceiling.
+    agentgateway prefixes tool names with the server name. Semantic tool search is an
+    extension.
+  consequences:
+    - data.eacp.entitlement.visible_tools is the one policy query for listings.
+
+- id: 33
+  title: LibreChat, Pydantic AI and Claude Code as the clients
+  round: 2
+  context: |
+    LibreChat was the only chat UI meeting OSI license, OIDC login, remote MCP over OAuth,
+    OpenTelemetry and a Helm chart. Pydantic AI (MIT) has an MCP client with OAuth and native
+    GenAI-convention instrumentation. Open WebUI and Lobe Chat have non-OSI licenses; Hugging
+    Face chat-ui lacks OpenTelemetry.
+  decision: |
+    LibreChat for employees, Pydantic AI for the scheduled agent, Claude Code as the tested IDE
+    client.
+  consequences:
+    - LibreChat's MongoDB dependency is the one open license exception (FerretDB spike).
+  related: [4]
+
+- id: 34
+  title: Customer-support domain with five threats on stage plus a budget demo
+  round: 2
+  context: |
+    The demo needs restricted data, an exfiltration channel, a high-risk action and a
+    third-party server, all self-hosted so it runs offline except for the external model.
+  decision: |
+    Tools: a customer database over PostgreSQL, tickets, web fetch, email send backed by
+    Mailpit, and a deliberately poisonable server. Scenarios: rug-pull quarantine, injection in
+    a tool result, session-taint exfiltration block, classification routing, human approval on
+    email, and team budget exhaustion.
+  consequences:
+    - Each scenario is a policy fixture, a pipeline unit test where applicable, and an end-to-end assertion in demo/scenarios/run.py.
+
+- id: 35
+  title: Argo CD, a monorepo, one namespace per team
+  round: 2
+  context: |
+    Argo CD and Flux are both Apache-2.0 and CNCF graduated. Argo CD's UI makes the "merge a PR
+    and watch it deploy" moment visible on stage.
+  decision: |
+    Argo CD with an ApplicationSet that creates one application per tool manifest. One
+    monorepo with platform, policies, tools, agents, teams, adapter, guardrails, demo and docs.
+    One Kubernetes namespace per team for MCP servers plus platform namespaces.
+  alternatives:
+    - option: Flux
+      reason: Equivalent capability, no UI for the demo.
+  consequences:
+    - CODEOWNERS maps the layering onto review rights.
+
+- id: 36
+  title: Repository enterprise-ai-control-plane with the eacp attribute prefix
+  round: 3
+  context: |
+    The name goes on the repository, the charts, the realm and every custom span and audit
+    attribute.
+  decision: |
+    Repository enterprise-ai-control-plane; prefix eacp. for attributes, labels, headers and
+    environment variables.
+
+- id: 37
+  title: Classification stays deterministic; Lev is an optional flagged sensitivity source
+  round: 3
+  context: |
+    The model asked about was Jev (TypeSafe AI, September 2026), a proprietary hosted decision
+    model: API-only, 70 to 500 ms, no documented EU operation. It fails the open-source rule, the
+    200 ms budget and data residency. Lev (Interfaze) is an Apache-2.0 clone on Qwen3.5-4B that
+    mimics its API. Red Hat's October 2026 benchmark found decision models do not reliably beat
+    small pre-trained classifiers for guardrails and recommends them only where no pre-trained
+    classifier exists.
+  decision: |
+    Lev is the optional fourth classification source, behind a flag, cloud-gpu profile only,
+    used for one job: zero-shot sensitivity labelling of free text with a fixed-order choice over
+    the four labels, merged with max semantics. Never used for injection, PII or secrets. Jev's
+    hosted API is never on the path. Thresholds are set from a few hundred of the team's own
+    samples; the model version is recorded in every finding; English only unless validated.
+  alternatives:
+    - option: Jev hosted API
+      reason: Proprietary, too slow for the synchronous budget, and would send restricted text to a third party.
+    - option: Laya or Kev
+      reason: Laya's license is unstated; Kev carries a contamination flag.
+
+- id: 38
+  title: The approver comes from the manifest's approver group; self-approval is a per-tool flag, off by default
+  round: 3
+  context: |
+    One human, but which one: the requester consenting, or a designated approver. User consent
+    is what MCP clients already do; the gateway-side approval adds value when the approver is
+    designated.
+  decision: |
+    The approver group defaults to the tool's owning team's approver group. The requester may
+    approve only if the tool manifest sets allowSelf. The audit record names the approver.
+  related: [31]
+
+- id: 39
+  title: EKS for the cloud-gpu profile
+  round: 3
+  context: |
+    The profile is cloud-agnostic through the NVIDIA GPU Operator, but one path must be tested.
+  decision: |
+    EKS. The gateway, Keycloak and LibreChat hostnames are the only profile-specific values.
+
+- id: 40
+  title: Anthropic only, model-level failover, in-house as last resort
+  round: 3
+  context: |
+    A second commercial provider means a second key for every reader who clones the repository.
+  decision: |
+    Anthropic is the only external provider. Failover goes from a primary Anthropic model to a
+    secondary one, then to the in-house model for non-restricted traffic.
+
+- id: 41
+  title: Identity on the LLM path, JWT first and trusted header second
+  round: 3
+  context: |
+    LibreChat calls upstream model endpoints with one configured service key, so per-user
+    budgets and audit on prompts need identity from somewhere.
+  decision: |
+    The gateway resolves the effective user and team from a JWT when the client sends one, as
+    in-cluster agents do, and otherwise from a user id header trusted only when the caller is
+    LibreChat's own identity. Budgets key off the resolved identity.
+  verify:
+    - Whether LibreChat's placeholder headers can forward a per-user token.
+    - Precedence between gateway-level and route-level JWT policies in agentgateway.
+
+- id: 42
+  title: The in-cluster Pydantic AI agent is a scheduled, autonomous agent
+  round: 3
+  context: |
+    LibreChat covers interactive use. The autonomous-identity path from ADR 0006 is otherwise
+    untested.
+  decision: |
+    A nightly ticket-triage CronJob with a service identity, a named owner, in-house models
+    only, no exfiltration-capable or destructive tools, and a confidential ceiling.
+
+- id: 43
+  title: One trace per user turn; the adapter continues it; audit records carry the trace id
+  round: 3
+  context: |
+    agentgateway's tool hook receives the allow-listed incoming headers on the request phase, so
+    trace context and baggage reach the adapter. The response phase receives only a CEL-computed
+    metadata block, and tool errors skip it entirely.
+  decision: |
+    The client roots the trace. agentgateway adds its spans. The adapter continues the trace from
+    the request headers and, on the response phase, from the metadata block, adding child spans
+    for guardrails, policy, taint and audit. Langfuse groups by conversation id. Every audit
+    record stores the trace id. Everything is sampled in the POC.
+  verify:
+    - The AgentgatewayPolicy field that fills McpResponse.metadata_context from CEL, including the stashed tool name and conversation id.
+
+- id: 44
+  title: Layered policy repository, one decision document, fixtures per threat, signed bundles
+  round: 3
+  context: |
+    Who may change which rule is as important as the rule.
+  decision: |
+    Global guardrails owned by security, then team, tool and agent layers owned by their teams,
+    enforced by CODEOWNERS. Layers can only add denials. Rego v1 with one decision document.
+    One fixture per demo threat. Manifests validated with their JSON schemas in CI. Bundles
+    carry the git revision, which appears in every audit record through data.system.bundles.
+  consequences:
+    - Forty policy unit tests run in CI against the six fixtures and their variants.
+
+- id: 45
+  title: Token budgets enforced, currency reported
+  round: 3
+  context: |
+    agentgateway enforces token budgets keyed by JWT claims; currency budgets would need custom
+    code.
+  decision: |
+    Tokens per user and per team per day are enforced in the gateway; Langfuse reports
+    currency. Exhaustion is a deny with a clear message and the sixth demo.
+  verify:
+    - Whether one rate-limit entry keyed by jwt.team can carry a different budget per team, or whether per-team policies are needed.
+
+- id: 46
+  title: GitHub Actions with a per-PR gate and a nightly red-team
+  round: 3
+  context: |
+    Red-teaming is slow and spends model tokens.
+  decision: |
+    Per pull request: manifest validation, policy tests, chart render, adapter and guardrail
+    tests, image build with keyless signing, Trivy, the tool gate, and an end-to-end run on kind
+    for the six scenarios. Nightly: promptfoo against the LLM route and the MCP endpoint.
+  consequences:
+    - The end-to-end job is dispatch-only until scripts/e2e.sh is complete; it must never be green by accident.
+
+- id: 47
+  title: Argo CD ApplicationSet from tool manifests
+  round: 3
+  context: |
+    The "merge a PR and watch it appear" moment should need no manual Application.
+  decision: |
+    A git files generator reads every tools/*/manifest.yaml and renders charts/mcp-tool with
+    the profile's platform values and the manifest, into the team's namespace.
+
+- id: 48
+  title: One Keycloak realm; groups are teams; two gateway audiences; realm import from manifests
+  round: 3
+  context: |
+    A realm per team would multiply clients and trust configuration for no isolation gain in a
+    single-enterprise deployment.
+  decision: |
+    One realm. Groups are teams and approver groups. Clients: LibreChat, the adapter's approval
+    page, Langfuse, the gateway's token-exchange identity, the demo runner, the red-team runner,
+    and one client per agent with a service account. Two bearer-only resource clients carry the
+    MCP and LLM audiences. Claims mapped: groups, team, clearance, data_label. The realm is
+    imported by the Keycloak operator from a generated resource.
+
+- id: 49
+  title: Publish under the organisation's GitHub, cross-post the article, generate ADRs, record a short video
+  round: 3
+  context: |
+    A company-backed repository gets more trust; the decisions made in the rounds are the most
+    reusable part of the publication.
+  decision: |
+    The repository lives under Lumenalta's GitHub organisation if they host it. The article is
+    cross-posted. One ADR per decision, generated from a structured log. A demo video under ten
+    minutes shows the six scenarios.

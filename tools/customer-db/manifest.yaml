@@ -1,0 +1,52 @@
+apiVersion: eacp.dev/v1alpha1
+kind: ToolManifest
+metadata:
+  name: customer-db
+  team: support
+  owner: support-platform@example.com
+  description: Read-only SQL access to the demo customer database through bytebase/dbhub (MIT), served over Streamable HTTP.
+spec:
+  # Placeholder digest. scripts/pin-tools.py resolves the real digest and the tool-gate rejects all-zero values.
+  image: ghcr.io/bytebase/dbhub@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  transport: http
+  http:
+    port: 8080
+    path: /mcp
+  env:
+    - name: TRANSPORT
+      value: http
+    - name: PORT
+      value: "8080"
+    - name: READONLY
+      value: "true"
+  egress:
+    - namespace: demo
+      port: 5432
+  credentials:
+    mode: service
+    secretRef:
+      store: openbao
+      path: eacp/tools/customer-db
+      keys: [DSN]
+  requiredGroups: [support]
+  outputTrust: trusted
+  tools:
+    - name: execute_sql
+      description: Run a read-only SQL statement against the customer database.
+      riskTier: medium
+      capability: read
+      outputClassification: restricted
+      approval:
+        mode: none
+    - name: search_objects
+      description: Search tables, views and columns by name.
+      riskTier: low
+      capability: read
+      outputClassification: internal
+  pins:
+    tools: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    prompts: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    resources: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }

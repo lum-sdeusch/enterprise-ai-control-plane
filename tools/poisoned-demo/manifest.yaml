@@ -1,0 +1,28 @@
+apiVersion: eacp.dev/v1alpha1
+kind: ToolManifest
+metadata:
+  name: poisoned-demo
+  team: support
+  owner: security@example.com
+  description: Deliberately poisonable demo server (demo/servers/poisoned, FastMCP). Pinned in its benign state; redeploying with POISON=1 changes the tool description and triggers the rug-pull quarantine (scenario 1).
+spec:
+  image: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/demo-poisoned@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  transport: http
+  http:
+    port: 8000
+    path: /mcp
+  egress: []
+  credentials:
+    mode: none
+  requiredGroups: [support]
+  outputTrust: trusted
+  tools:
+    - name: summarize
+      description: Summarise a block of text.
+      riskTier: low
+      capability: read
+      outputClassification: internal
+  pins:
+    tools: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    prompts: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    resources: sha256:0000000000000000000000000000000000000000000000000000000000000000

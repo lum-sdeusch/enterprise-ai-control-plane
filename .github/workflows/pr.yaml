@@ -1,0 +1,170 @@
+name: pr
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  OPA_VERSION: v1.22.2
+  HELM_VERSION: v3.19.0
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  manifests:
+    name: Validate manifests and compile policy data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install jsonschema pyyaml
+      - run: python scripts/validate-manifests.py
+      - run: python scripts/compile-manifests.py
+      - name: Fail if compiled data is stale in the PR
+        run: git diff --exit-code -- policies/eacp/data.json platform/keycloak/realm-import.yaml
+
+  policies:
+    name: OPA format, check and test
+    runs-on: ubuntu-latest
+    needs: manifests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: ${{ env.OPA_VERSION }}
+      - run: opa fmt --fail --list policies/
+      - run: opa check --strict policies/rego policies/tests
+      - run: opa test --explain fails policies/ -v
+      - run: scripts/build-bundle.sh ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opa-bundle
+          path: dist/eacp-bundle.tar.gz
+
+  chart:
+    name: Helm lint and render every tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: helm lint charts/mcp-tool
+      - run: make chart-template PROFILE=laptop HELM=helm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rendered-tools
+          path: dist/rendered/
+
+  adapter:
+    name: Go adapter build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: adapter/go.mod
+          cache-dependency-path: adapter/go.sum
+      - run: cd adapter && go vet ./... && go build ./... && go test ./...
+
+  guardrails:
+    name: Python guardrail service tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install -e "guardrails[test]"
+      - run: cd guardrails && python -m pytest -q
+
+  adrs:
+    name: ADRs are generated from the decision log
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pyyaml
+      - run: python scripts/gen-adrs.py
+      - run: git diff --exit-code -- docs/adr/
+
+  # Supply-chain gate for the two images this repository builds. Runs on pushes to main and on
+  # pull requests from the same repository (forks have no OIDC token for keyless signing).
+  images:
+    name: Build, scan and sign images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      matrix:
+        image: [adapter, guardrails]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ github.repository }}/eacp-${{ matrix.image }}:${{ github.sha }}
+          load: ${{ github.event_name != 'push' }}
+      # Trivy: pin this action to a commit SHA before relying on it (see ADR 0025).
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/eacp-${{ matrix.image }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - uses: sigstore/cosign-installer@v3
+        if: github.event_name == 'push'
+      - name: Sign (keyless) on main
+        if: github.event_name == 'push'
+        run: cosign sign --yes ghcr.io/${{ github.repository }}/eacp-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+
+  # Tool onboarding gate: for every changed tool manifest, verify the image signature, scan the
+  # image, scan the tool descriptions with mcp-scanner and check the pinned hash.
+  tool-gate:
+    name: Tool onboarding gate
+    runs-on: ubuntu-latest
+    needs: [manifests, policies, chart]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: sigstore/cosign-installer@v3
+      - run: pip install pyyaml mcp-scanner
+      - name: Gate changed manifests
+        run: scripts/tool-gate.sh origin/${{ github.base_ref || 'main' }}
+
+  # End-to-end on kind. Runs the six scenarios. Dispatch-only until scripts/e2e.sh is complete;
+  # it must never be green by accident.
+  e2e:
+    name: End-to-end on kind
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: eacp
+      - run: PROFILE=laptop scripts/up.sh
+      - run: PROFILE=laptop scripts/e2e.sh

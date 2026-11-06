@@ -1,0 +1,48 @@
+{{- /*
+agentgateway acts as the OAuth 2.1 resource server for this MCP server: it validates Keycloak
+JWTs against the realm JWKS, requires the MCP audience, and serves protected-resource metadata
+so clients discover Keycloak. Coarse group entitlement is enforced here in CEL; everything
+finer is the adapter's ExtMCP hook plus OPA.
+*/ -}}
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-{{ include "mcp-tool.name" . }}-authn
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mcp-{{ include "mcp-tool.name" . }}
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.platform.keycloak.issuer | quote }}
+          audiences:
+            - {{ .Values.platform.keycloak.mcpAudience | quote }}
+          jwks:
+            remote:
+              backendRef:
+                name: {{ .Values.platform.keycloak.serviceName }}
+                kind: Service
+                namespace: {{ .Values.platform.keycloak.namespace }}
+                port: {{ .Values.platform.keycloak.port }}
+              jwksPath: {{ .Values.platform.keycloak.jwksPath | quote }}
+          mcp:
+            provider: Keycloak
+            resourceMetadata:
+              resource: {{ include "mcp-tool.resourceUrl" . | quote }}
+              scopesSupported:
+                - openid
+                - profile
+                - email
+              bearerMethodsSupported:
+                - header
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - {{ include "mcp-tool.groupsCel" . | quote }}

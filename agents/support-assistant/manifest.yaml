@@ -1,0 +1,22 @@
+apiVersion: eacp.dev/v1alpha1
+kind: AgentManifest
+metadata:
+  name: support-assistant
+  team: support
+  owner: support-leads@example.com
+  description: The interactive assistant employees use through LibreChat. Acts on behalf of the logged-in user; the token carries the user as subject and this agent in the actor chain.
+spec:
+  kind: interactive
+  identity:
+    clientId: agent-support-assistant
+  riskTier: medium
+  allowedTools:
+    - customer-db/*
+    - tickets/*
+    - web-fetch/fetch
+    - email-send/send_email
+    - poisoned-demo/*
+  allowedModelClasses:
+    - external
+    - inhouse
+  maxClassification: restricted

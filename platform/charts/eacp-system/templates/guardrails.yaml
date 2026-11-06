@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eacp-guardrails
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: eacp-guardrails
+    app.kubernetes.io/part-of: eacp
+spec:
+  replicas: {{ .Values.guardrails.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eacp-guardrails
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eacp-guardrails
+        app.kubernetes.io/part-of: eacp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsUser }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: guardrails
+          image: {{ .Values.images.guardrails | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.guardrails.port }}
+          envFrom:
+            # Model endpoints and names differ per profile: platform/models/<profile>/guardrails-profile.yaml
+            - configMapRef:
+                name: {{ .Values.guardrails.profileConfigMap }}
+          env:
+            - name: EACP_GUARDRAILS_PORT
+              value: {{ .Values.guardrails.port | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.otlpEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: eacp-guardrails
+            - name: HF_HOME
+              value: /cache/hf
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.guardrails.resources | nindent 12 }}
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eacp-guardrails
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: eacp-guardrails
+    app.kubernetes.io/part-of: eacp
+spec:
+  selector:
+    app.kubernetes.io/name: eacp-guardrails
+  ports:
+    - name: http
+      port: {{ .Values.guardrails.port }}
+      targetPort: http

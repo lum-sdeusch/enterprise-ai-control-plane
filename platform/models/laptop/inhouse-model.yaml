@@ -1,0 +1,23 @@
+# The in-house concrete model for the laptop profile: Ollama's OpenAI-compatible endpoint.
+# eacp-inhouse is the name the routing callout returns for restricted and confidential prompts
+# and the fallback for every virtual model.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: eacp-inhouse
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  visibility: Internal
+  provider: OpenAI
+  baseURL: http://ollama.models.svc.cluster.local:11434/v1
+  policies:
+    transformations:
+      - field: model
+        expression: '"qwen3:4b"'
+# TODO(verify): whether the custom-provider `providerOverride` is available on AgentgatewayModel
+# so telemetry reports gen_ai.provider.name=ollama rather than openai.

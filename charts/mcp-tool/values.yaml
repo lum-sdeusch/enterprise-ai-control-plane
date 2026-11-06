@@ -1,0 +1,73 @@
+# Values for the mcp-tool chart.
+#
+# The chart is rendered with two value files layered on top of this one:
+#   -f platform/values/<profile>.yaml   the `platform` block (gateway, adapter, Keycloak, ...)
+#   -f tools/<name>/manifest.yaml       the ToolManifest itself at the root
+#
+# The manifest keys below are a complete, valid sample so that `helm lint` and a bare
+# `helm template` succeed; every real render overrides them. Keep the sample minimal so no
+# default leaks into a real manifest through Helm's deep merge (lists are replaced, maps are
+# merged).
+
+platform:
+  profile: laptop
+  gateway:
+    name: agentgateway-proxy
+    namespace: agentgateway-system
+    publicUrl: http://gw.127.0.0.1.sslip.io:8080
+  adapter:
+    name: eacp-adapter
+    namespace: eacp-system
+    grpcPort: 4445
+    httpPort: 8080
+  keycloak:
+    issuer: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+    serviceName: keycloak-service
+    namespace: keycloak
+    port: 8080
+    realm: eacp
+    mcpAudience: eacp-mcp
+    jwksPath: /realms/eacp/protocol/openid-connect/certs
+    tokenPath: /realms/eacp/protocol/openid-connect/token
+    gatewayClientId: eacp-gateway
+    gatewayClientSecretName: eacp-gateway-oauth-client
+    gatewayClientSecretPath: eacp/gateway/oauth-client
+  secrets:
+    clusterSecretStore: openbao
+  kmcp:
+    port: 3000
+    path: /mcp
+    # TODO(verify): the label kmcp puts on the pods it creates, so the chart's Service can select them.
+    podLabelKey: app.kubernetes.io/name
+  networkPolicy:
+    # none | cilium. With cilium, egress fqdn rules render as CiliumNetworkPolicy toFQDNs.
+    fqdn: none
+  podSecurity:
+    runAsUser: 10001
+
+apiVersion: eacp.dev/v1alpha1
+kind: ToolManifest
+metadata:
+  name: sample
+  team: sample
+  owner: sample@example.com
+spec:
+  image: ghcr.io/example/sample-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  transport: http
+  http:
+    port: 8000
+    path: /mcp
+  egress: []
+  credentials:
+    mode: none
+  requiredGroups: []
+  outputTrust: trusted
+  tools:
+    - name: ping
+      riskTier: low
+      capability: read
+      outputClassification: public
+  pins:
+    tools: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    prompts: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    resources: sha256:0000000000000000000000000000000000000000000000000000000000000000

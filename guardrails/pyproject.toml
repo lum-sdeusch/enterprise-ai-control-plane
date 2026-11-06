@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eacp-guardrails"
+version = "0.1.0"
+description = "Guardrail service of the Enterprise AI Control Plane: PII, secrets, injection, sensitivity and judge detectors behind one HTTP API. Returns findings; never decides."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Presidio (MIT) with the spaCy engine. GLiNER2-PII (Apache-2.0) plugs in as a recognizer.
+presidio = ["presidio-analyzer>=2.2.360", "spacy>=3.7"]
+gliner = ["gliner>=0.2.13"]
+otel = ["opentelemetry-instrumentation-fastapi>=0.48b0", "opentelemetry-exporter-otlp-proto-grpc>=1.27"]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["eacp_guardrails*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

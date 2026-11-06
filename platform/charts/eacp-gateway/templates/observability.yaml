@@ -1,0 +1,75 @@
+# Traces and access logs from the gateway. Content never goes into spans here; the adapter is
+# the single content-capture point (ADR 0021). Access logs carry tool names, guardrail
+# outcomes and the model actually selected, which is the evidence for scenario 4.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: tracing
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - kind: Gateway
+      name: agentgateway-proxy
+      group: gateway.networking.k8s.io
+  frontend:
+    tracing:
+      backendRef:
+        name: otel-collector
+        namespace: telemetry
+        port: 4317
+      protocol: GRPC
+      randomSampling: "true"
+      clientSampling: "true"
+      resources:
+        - name: service.name
+          expression: '"agentgateway"'
+        - name: deployment.environment.name
+          expression: '"${PROFILE}"'
+      attributes:
+        add:
+          - name: eacp.subject
+            expression: 'has(jwt.sub) ? jwt.sub : ""'
+          - name: eacp.team
+            expression: 'has(jwt.team) ? jwt.team : ""'
+          - name: eacp.conversation_id
+            expression: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: access-logs
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  frontend:
+    accessLog:
+      preset: Otel
+      otlp:
+        backendRef:
+          name: otel-collector
+          namespace: telemetry
+          port: 4317
+        protocol: GRPC
+      attributes:
+        add:
+          - name: eacp.subject
+            expression: 'has(jwt.sub) ? jwt.sub : ""'
+          - name: eacp.team
+            expression: 'has(jwt.team) ? jwt.team : ""'
+          - name: eacp.conversation_id
+            expression: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
+          - name: mcp.method
+            expression: 'has(mcp.methodName) ? mcp.methodName : ""'
+          - name: mcp.tool
+            expression: 'has(mcp.tool) && has(mcp.tool.name) ? mcp.tool.name : ""'
+          - name: mcp.guardrail_decision
+            expression: 'mcpGuardrails != null ? string(mcpGuardrails.decision) : ""'
+          - name: llm.request_model
+            expression: 'has(llm.requestModel) ? llm.requestModel : ""'
+          - name: guardrails
+            expression: guardrails
+          - name: backend_endpoint
+            expression: 'has(backend.endpoint) ? backend.endpoint : ""'

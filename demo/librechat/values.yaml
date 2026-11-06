@@ -1,0 +1,28 @@
+# Values for the official LibreChat Helm chart (oci://ghcr.io/librechat-ai/librechat-chart).
+# TODO(verify): value names of the chart version pinned in platform/argocd/apps/30-demo.yaml.
+#
+# Open item 1 in docs/design.md: LibreChat needs MongoDB (SSPL, not OSI). The spike is FerretDB
+# (Apache-2.0) as a drop-in; until confirmed, this values file leaves the chart's MongoDB
+# dependency on and the exception is documented.
+librechat:
+  configEnv:
+    APP_TITLE: "Enterprise AI Control Plane demo"
+    ENDPOINTS: "custom"
+    ALLOW_REGISTRATION: "false"
+    ALLOW_SOCIAL_LOGIN: "true"
+    ALLOW_SOCIAL_REGISTRATION: "true"
+    OPENID_URL: "http://auth.127.0.0.1.sslip.io:8080/realms/eacp"
+    OPENID_CLIENT_ID: "librechat"
+    OPENID_SCOPE: "openid profile email"
+    OPENID_CALLBACK_URL: "/oauth/openid/callback"
+    OPENID_BUTTON_LABEL: "Sign in with Keycloak"
+    OPENID_REUSE_TOKENS: "true"
+    DOMAIN_CLIENT: "http://chat.127.0.0.1.sslip.io:3080"
+    DOMAIN_SERVER: "http://chat.127.0.0.1.sslip.io:3080"
+  existingSecretName: librechat-secrets   # OPENID_CLIENT_SECRET, EACP_LLM_SERVICE_TOKEN, JWT_SECRET, CREDS_KEY...
+  configYamlContent: |
+    # replaced at deploy time by demo/librechat/librechat.yaml (scripts/up.sh)
+image:
+  tag: v0.8.8   # TODO(pin)
+mongodb:
+  enabled: true

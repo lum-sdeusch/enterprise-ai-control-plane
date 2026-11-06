@@ -1,0 +1,12 @@
+profile: cloud-gpu
+gateway:
+  publicUrl: https://gw.eacp.example.com
+keycloak:
+  issuer: https://auth.eacp.example.com/realms/eacp
+adapter:
+  replicas: 2
+guardrails:
+  replicas: 2
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { cpu: "4", memory: 6Gi }

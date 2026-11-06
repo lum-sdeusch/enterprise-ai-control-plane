@@ -1,0 +1,19 @@
+{
+  "t6_prompt_to_external_with_restricted_taint": {
+    "phase": "llm_request",
+    "subject": {
+      "sub": "alice",
+      "groups": ["support"],
+      "team": "support",
+      "clearance": "restricted",
+      "data_label": null,
+      "act": {"client_id": "agent-support-assistant"}
+    },
+    "agent": "support-assistant",
+    "findings": {"pii": [], "secrets": [], "injection": {"score": 0.01, "label": "safe", "categories": []}, "sensitivity": null},
+    "taint": {"touched_pii": false, "touched_restricted": true, "touched_untrusted_content": false},
+    "llm": {"requested_model": "claude-sonnet", "target_class": "external"},
+    "conversation_id": "conv-model-class",
+    "trace_id": "trace-model-class"
+  }
+}

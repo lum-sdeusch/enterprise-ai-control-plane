@@ -1,0 +1,20 @@
+# PostgreSQL for Langfuse through CloudNativePG (Apache-2.0, CNCF). Keycloak and the demo
+# customer database get their own clusters (platform/keycloak/postgres.yaml, demo/).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: langfuse-db
+  namespace: telemetry
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6   # TODO(pin)
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: langfuse
+      owner: langfuse
+      # CNPG generates the langfuse-db-app Secret with username/password.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }

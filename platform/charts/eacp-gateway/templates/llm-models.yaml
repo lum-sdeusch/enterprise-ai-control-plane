@@ -1,0 +1,144 @@
+# LLM side of the gateway. Clients ask for one model, eacp-auto. The gateway calls the adapter,
+# which returns the model class the conversation's classification allows, and the gateway routes
+# there. External traffic fails over between two Anthropic models; the in-house model is the
+# fallback for everything, including a failed callout, so a routing outage can never push data
+# outward.
+#
+# The in-house concrete model (eacp-inhouse) is profile specific and lives in
+# platform/argocd/profiles/<profile>/models.yaml.
+
+# --- concrete external models --------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: claude-sonnet
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  visibility: Internal
+  # TODO(verify): provider name and model field for Anthropic on AgentgatewayModel; the verified
+  # example uses provider: OpenAI with baseURL. The AgentgatewayBackend form is
+  # `anthropic: {model: ...}` with policies.auth.secretRef (see failover docs).
+  provider: Anthropic
+  model: {{ .Values.external.primaryModel }}
+  policies:
+    auth:
+      secretRef:
+        name: {{ .Values.external.apiKeySecret }}
+    health:
+      eviction:
+        consecutiveFailures: 1
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: claude-haiku
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  visibility: Internal
+  provider: Anthropic
+  model: {{ .Values.external.secondaryModel }}
+  policies:
+    auth:
+      secretRef:
+        name: {{ .Values.external.apiKeySecret }}
+    health:
+      eviction:
+        consecutiveFailures: 1
+---
+# --- virtual: external with failover --------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: eacp-external
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  virtualModel:
+    failover:
+      targets:
+        - modelRef:
+            name: claude-sonnet
+          priority: 0
+        - modelRef:
+            name: claude-haiku
+          priority: 1
+        - modelRef:
+            name: eacp-inhouse
+          priority: 2
+---
+# --- virtual: classification-aware routing via callout to the adapter ---------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayModel
+metadata:
+  name: eacp-auto
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+      sectionName: http
+  virtualModel:
+    callout:
+      backendRef:
+        name: eacp-adapter
+        namespace: eacp-system
+        port: 8080
+      # TODO(verify): path override for a backendRef callout; the documented example sets the
+      # full path in `url`. The adapter serves the route decision at /v1/route.
+      body: '{"messages": llmRequest.messages, "model": llmRequest.model}'
+      headers:
+        x-eacp-sub: jwt.sub
+        x-eacp-team: 'has(jwt.team) ? jwt.team : ""'
+        x-eacp-groups: 'has(jwt.groups) ? jwt.groups.join(",") : ""'
+        x-eacp-clearance: 'has(jwt.clearance) ? jwt.clearance : ""'
+        x-eacp-data-label: 'has(jwt.data_label) ? jwt.data_label : ""'
+        x-eacp-agent: 'has(jwt.act) && has(jwt.act.client_id) ? jwt.act.client_id : (has(jwt.azp) ? jwt.azp : "")'
+        x-eacp-conversation-id: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
+        baggage: 'has(request.headers["baggage"]) ? request.headers["baggage"] : ""'
+        traceparent: 'has(request.headers["traceparent"]) ? request.headers["traceparent"] : ""'
+      transformation:
+        # The adapter answers {"model": "eacp-external" | "eacp-inhouse"}.
+        # TODO(verify): whether a callout may target another virtual model; if not, the adapter
+        # returns the concrete name (claude-sonnet / eacp-inhouse) instead.
+        model: callout.body.model
+      fallback:
+        modelRef:
+          name: eacp-inhouse
+      # No cache: taint can change between two prompts of the same conversation.
+---
+# Model-level health so failover moves on after a single failure, and route-level retry so the
+# failing request itself is retried on the next target.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-retry
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  traffic:
+    retry:
+      attempts: 2
+      backoff: 1s
+      codes:
+        - 500
+        - 502
+        - 503
+        - 529

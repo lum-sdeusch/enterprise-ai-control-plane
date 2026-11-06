@@ -1,0 +1,90 @@
+# CPU-only model serving for the laptop profile. Ollama serves the small in-house general model
+# and the guard model. Qwen3Guard is not in Ollama's official library; it is pulled as a community
+# GGUF from Hugging Face (ADR 0029).
+# TODO(verify): the exact hf.co repository for a Qwen3Guard-Gen-0.6B GGUF and its quantisation.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: models
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: models
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.12.6   # TODO(pin)
+          ports:
+            - containerPort: 11434
+          env:
+            - name: OLLAMA_KEEP_ALIVE
+              value: "30m"
+            - name: OLLAMA_NUM_PARALLEL
+              value: "2"
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+          resources:
+            requests: { cpu: "2", memory: 6Gi }
+            limits: { cpu: "4", memory: 10Gi }
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            periodSeconds: 10
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: models
+spec:
+  selector:
+    app.kubernetes.io/name: ollama
+  ports:
+    - port: 11434
+---
+# Pulls the two models once. Re-run after changing the names.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull
+  namespace: models
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      containers:
+        - name: pull
+          image: ollama/ollama:0.12.6   # TODO(pin)
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              export OLLAMA_HOST=http://ollama.models.svc.cluster.local:11434
+              ollama pull qwen3:4b
+              ollama pull hf.co/Qwen/Qwen3Guard-Gen-0.6B-GGUF:Q8_0   # TODO(verify) repository and tag

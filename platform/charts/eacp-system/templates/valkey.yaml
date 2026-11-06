@@ -1,0 +1,65 @@
+# Session state: taint labels and pending approvals. Single instance in the POC; both data sets
+# are short-lived and reconstructible, so losing them fails closed (no taint means no history,
+# and the adapter treats an unknown conversation as fresh) rather than open.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: valkey
+    app.kubernetes.io/part-of: eacp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: valkey
+        app.kubernetes.io/part-of: eacp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsUser }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: {{ .Values.images.valkey | quote }}
+          args: ["--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: valkey
+              containerPort: {{ .Values.valkey.port }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            tcpSocket:
+              port: valkey
+          resources:
+            {{- toYaml .Values.valkey.resources | nindent 12 }}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: valkey
+  ports:
+    - name: valkey
+      port: {{ .Values.valkey.port }}
+      targetPort: valkey

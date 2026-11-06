@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""The six demo scenarios as an executable test against a running cluster (scripts/e2e.sh).
+
+Each scenario drives the gateway the way a client would and asserts the control plane's
+response: the eacp_code the adapter puts in the JSON-RPC error data, the tools visible in a
+listing, or which model answered. Scenarios print PASS/FAIL and the script exits non-zero on
+any failure, so CI cannot be green by accident.
+
+Requires: a reachable gateway (EACP_GATEWAY_URL), Keycloak (EACP_KEYCLOAK_TOKEN_URL) with the
+demo users from the generated realm, and the `mcp` and `httpx` packages.
+TODO(verify): the `mcp` SDK v2 client API for spec 2026-07-28 (handshake-free sessions).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+import uuid
+from dataclasses import dataclass, field
+
+import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+GATEWAY = os.environ.get("EACP_GATEWAY_URL", "http://gw.127.0.0.1.sslip.io:8080").rstrip("/")
+TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "http://auth.127.0.0.1.sslip.io:8080/realms/eacp/protocol/openid-connect/token")
+RUNNER_CLIENT_ID = os.environ.get("EACP_RUNNER_CLIENT_ID", "demo-runner")
+RUNNER_CLIENT_SECRET = os.environ.get("EACP_RUNNER_CLIENT_SECRET", "")
+
+
+@dataclass
+class Result:
+    name: str
+    ok: bool
+    detail: str = ""
+
+
+@dataclass
+class Report:
+    results: list[Result] = field(default_factory=list)
+
+    def add(self, name: str, ok: bool, detail: str = "") -> None:
+        self.results.append(Result(name, ok, detail))
+        print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}")
+
+    @property
+    def failed(self) -> bool:
+        return any(not r.ok for r in self.results)
+
+
+def user_token(username: str, password: str, audience: str = "eacp-mcp") -> str:
+    """Resource-owner password grant on the demo-runner client (laptop profile only)."""
+    resp = httpx.post(
+        TOKEN_URL,
+        data={"grant_type": "password", "client_id": RUNNER_CLIENT_ID, "client_secret": RUNNER_CLIENT_SECRET, "username": username, "password": password, "scope": "openid eacp"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+class Session:
+    def __init__(self, token: str, conversation_id: str | None = None):
+        self.headers = {"Authorization": f"Bearer {token}", "x-eacp-conversation-id": conversation_id or f"demo:{uuid.uuid4()}"}
+
+    async def tools(self) -> list[str]:
+        async with streamablehttp_client(f"{GATEWAY}/mcp", headers=self.headers) as (r, w, _):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = await s.list_tools()
+                return [t.name for t in res.tools]
+
+    async def call(self, name: str, args: dict) -> tuple[bool, str, dict]:
+        """Returns (is_error, text, eacp_data)."""
+        async with streamablehttp_client(f"{GATEWAY}/mcp", headers=self.headers) as (r, w, _):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = await s.call_tool(name, args)
+                text = "\n".join(getattr(c, "text", "") for c in res.content)
+                data = {}
+                if res.isError:
+                    try:
+                        data = json.loads(text).get("data", {})
+                    except (ValueError, AttributeError):
+                        pass
+                return bool(res.isError), text, data
+
+    async def chat(self, prompt: str, model: str = "eacp-auto") -> tuple[int, dict]:
+        async with httpx.AsyncClient(timeout=120) as c:
+            resp = await c.post(f"{GATEWAY}/v1/chat/completions", headers=self.headers, json={"model": model, "messages": [{"role": "user", "content": prompt}]})
+            try:
+                return resp.status_code, resp.json()
+            except ValueError:
+                return resp.status_code, {"raw": resp.text}
+
+
+async def scenario_1_rugpull(rep: Report, alice: Session) -> None:
+    tools = await alice.tools()
+    rep.add("1a benign poisoned-demo is listed before the rug-pull", "poisoned-demo_summarize" in tools)
+    print("     -> redeploy tools/poisoned-demo with POISON=1 now (scripts/e2e.sh does this), then:")
+    tools = await alice.tools()
+    rep.add("1b poisoned server disappears from tools/list", "poisoned-demo_summarize" not in tools)
+    err, _, data = await alice.call("poisoned-demo_summarize", {"text": "hello"})
+    rep.add("1c calls to the quarantined server are denied", err and data.get("eacp_code") == "server_quarantined", str(data))
+
+
+async def scenario_2_injection(rep: Report, alice: Session) -> None:
+    err, text, data = await alice.call("web-fetch_fetch", {"url": "https://docs.example.com/kb/injected"})
+    rep.add("2 injected tool result is blocked", err and data.get("eacp_code") == "injection_in_tool_result", str(data))
+
+
+async def scenario_3_taint(rep: Report, alice: Session) -> None:
+    err, _, _ = await alice.call("customer-db_execute_sql", {"sql": "select name, email from customers limit 1"})
+    rep.add("3a reading a restricted record is allowed", not err)
+    err, _, data = await alice.call("web-fetch_fetch", {"url": "https://docs.example.com/kb/reset"})
+    rep.add("3b exfil-capable tool denied after restricted read", err and data.get("eacp_code") == "exfil_after_restricted", str(data))
+
+
+async def scenario_4_routing(rep: Report, alice_fresh: Session, alice_tainted: Session) -> None:
+    status, body = await alice_fresh.chat("Write a friendly two-line greeting for a newsletter.")
+    model = body.get("model", "")
+    rep.add("4a public prompt is answered by the external model", status == 200 and "claude" in model, model)
+    status, body = await alice_tainted.chat("Summarise what we know about this customer.")
+    model = body.get("model", "")
+    rep.add("4b restricted conversation stays in-house", status == 200 and "claude" not in model, model)
+
+
+async def scenario_5_approval(rep: Report, alice: Session) -> None:
+    args = {"to": "jane.doe@customer.example", "subject": "Your ticket 4410", "body": "We reset your password."}
+    err, _, data = await alice.call("email-send_send_email", args)
+    ok = err and data.get("eacp_code") == "approval_required" and data.get("approval_url")
+    rep.add("5a high-risk tool denied with an approval link", bool(ok), str(data.get("approval_url")))
+    if ok:
+        print(f"     -> approve as bob at {data['approval_url']} (scripts/e2e.sh drives this with bob's session), then:")
+        err, _, data = await alice.call("email-send_send_email", args)
+        rep.add("5b retry succeeds after approval", not err, str(data))
+
+
+async def scenario_6_budget(rep: Report, carol: Session) -> None:
+    status = 200
+    for _ in range(80):
+        status, _ = await carol.chat("Say hi.")
+        if status == 429:
+            break
+    rep.add("6 per-user token budget exhausts with 429", status == 429, f"last status {status}")
+
+
+async def main() -> int:
+    rep = Report()
+    alice = Session(user_token("alice", os.environ.get("EACP_ALICE_PASSWORD", "changeme-alice")))
+    carol = Session(user_token("carol", os.environ.get("EACP_CAROL_PASSWORD", "changeme-carol")))
+    await scenario_1_rugpull(rep, alice)
+    await scenario_2_injection(rep, Session(alice.headers["Authorization"][7:]))
+    tainted = Session(alice.headers["Authorization"][7:])
+    await scenario_3_taint(rep, tainted)
+    await scenario_4_routing(rep, Session(alice.headers["Authorization"][7:]), tainted)
+    await scenario_5_approval(rep, Session(alice.headers["Authorization"][7:]))
+    await scenario_6_budget(rep, carol)
+    print(f"\n{sum(r.ok for r in rep.results)}/{len(rep.results)} passed")
+    return 1 if rep.failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

@@ -1,0 +1,239 @@
+{
+  "agent_clients": {
+    "agent-nightly-triage": "nightly-triage",
+    "agent-support-assistant": "support-assistant"
+  },
+  "agents": {
+    "nightly-triage": {
+      "allowed_model_classes": [
+        "inhouse"
+      ],
+      "allowed_tools": [
+        "tickets/*"
+      ],
+      "client_id": "agent-nightly-triage",
+      "kind": "scheduled",
+      "max_classification": "confidential",
+      "owner": "support-leads@example.com",
+      "risk_tier": "medium",
+      "team": "support"
+    },
+    "support-assistant": {
+      "allowed_model_classes": [
+        "external",
+        "inhouse"
+      ],
+      "allowed_tools": [
+        "customer-db/*",
+        "tickets/*",
+        "web-fetch/fetch",
+        "email-send/send_email",
+        "poisoned-demo/*"
+      ],
+      "client_id": "agent-support-assistant",
+      "kind": "interactive",
+      "max_classification": "restricted",
+      "owner": "support-leads@example.com",
+      "risk_tier": "medium",
+      "team": "support"
+    }
+  },
+  "teams": {
+    "support": {
+      "allowed_model_classes": [
+        "external",
+        "inhouse"
+      ],
+      "approver_groups": [
+        "support-approvers"
+      ],
+      "budgets": {
+        "tokens_per_team_per_day": 2000000,
+        "tokens_per_user_per_day": 200000
+      },
+      "default_clearance": "internal",
+      "groups": [
+        "support"
+      ],
+      "namespace": "team-support",
+      "owner": "support-leads@example.com"
+    }
+  },
+  "tools": {
+    "customer-db": {
+      "credentials_mode": "service",
+      "output_trust": "trusted",
+      "owner": "support-platform@example.com",
+      "pins": {
+        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "required_groups": [
+        "support"
+      ],
+      "team": "support",
+      "tools": {
+        "execute_sql": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "read",
+          "output_classification": "restricted",
+          "risk_tier": "medium"
+        },
+        "search_objects": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "read",
+          "output_classification": "internal",
+          "risk_tier": "low"
+        }
+      },
+      "transport": "http"
+    },
+    "email-send": {
+      "credentials_mode": "none",
+      "output_trust": "trusted",
+      "owner": "support-platform@example.com",
+      "pins": {
+        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "required_groups": [
+        "support"
+      ],
+      "team": "support",
+      "tools": {
+        "send_email": {
+          "approval": {
+            "allow_self": false,
+            "approvers": "support-approvers",
+            "mode": "required"
+          },
+          "capability": "exfil-capable",
+          "output_classification": "public",
+          "risk_tier": "high"
+        }
+      },
+      "transport": "http"
+    },
+    "poisoned-demo": {
+      "credentials_mode": "none",
+      "output_trust": "trusted",
+      "owner": "security@example.com",
+      "pins": {
+        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "required_groups": [
+        "support"
+      ],
+      "team": "support",
+      "tools": {
+        "summarize": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "read",
+          "output_classification": "internal",
+          "risk_tier": "low"
+        }
+      },
+      "transport": "http"
+    },
+    "tickets": {
+      "credentials_mode": "none",
+      "output_trust": "trusted",
+      "owner": "support-platform@example.com",
+      "pins": {
+        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "required_groups": [
+        "support"
+      ],
+      "team": "support",
+      "tools": {
+        "close_ticket": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "destructive",
+          "output_classification": "internal",
+          "risk_tier": "medium"
+        },
+        "create_ticket": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "write",
+          "output_classification": "internal",
+          "risk_tier": "medium"
+        },
+        "get_ticket": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "read",
+          "output_classification": "confidential",
+          "risk_tier": "low"
+        },
+        "list_tickets": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "read",
+          "output_classification": "internal",
+          "risk_tier": "low"
+        }
+      },
+      "transport": "http"
+    },
+    "web-fetch": {
+      "credentials_mode": "none",
+      "output_trust": "untrusted",
+      "owner": "support-platform@example.com",
+      "pins": {
+        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "required_groups": [
+        "support"
+      ],
+      "team": "support",
+      "tools": {
+        "fetch": {
+          "approval": {
+            "allow_self": false,
+            "approvers": null,
+            "mode": "none"
+          },
+          "capability": "exfil-capable",
+          "output_classification": "public",
+          "risk_tier": "medium"
+        }
+      },
+      "transport": "stdio"
+    }
+  }
+}

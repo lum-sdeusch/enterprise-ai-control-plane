@@ -1,0 +1,25 @@
+{
+  "t2_injection_result": {
+    "phase": "response",
+    "subject": {
+      "sub": "alice",
+      "groups": ["support"],
+      "team": "support",
+      "clearance": "restricted",
+      "act": {"client_id": "agent-support-assistant"}
+    },
+    "agent": "support-assistant",
+    "tool": {"server": "web-fetch", "name": "fetch"},
+    "arguments": {"url": "https://docs.example.com/kb/reset-password"},
+    "findings": {
+      "pii": [],
+      "secrets": [],
+      "injection": {"score": 0.93, "label": "unsafe", "categories": ["Jailbreak"]}
+    },
+    "taint": {"touched_pii": false, "touched_restricted": false, "touched_untrusted_content": false},
+    "pinning": {"tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+    "approval": {"approved": false, "approver": null, "approver_groups": []},
+    "conversation_id": "conv-injection",
+    "trace_id": "trace-injection"
+  }
+}

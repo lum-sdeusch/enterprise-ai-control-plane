@@ -1,0 +1,11 @@
+{
+  "revision": "dev",
+  "roots": [
+    "eacp",
+    "system/log"
+  ],
+  "metadata": {
+    "project": "enterprise-ai-control-plane",
+    "entrypoint": "eacp/decision"
+  }
+}

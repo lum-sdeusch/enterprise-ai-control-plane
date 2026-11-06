@@ -1,0 +1,7 @@
+apiVersion: v2
+name: eacp-system
+description: The enforcement plane of the Enterprise AI Control Plane - the adapter with its OPA sidecar, the guardrail service, Valkey for session state, and the secrets the gateway needs.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"

@@ -1,0 +1,16 @@
+# Defaults match the laptop profile; values-cloud-gpu.yaml overrides the hostnames.
+profile: laptop
+gateway:
+  publicUrl: http://gw.127.0.0.1.sslip.io:8080
+keycloak:
+  issuer: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+  serviceName: keycloak-service
+  namespace: keycloak
+  port: 8080
+external:
+  # Anthropic is the only external provider (ADR 0040). Failover is model-level, then in-house.
+  primaryModel: claude-sonnet-4-5
+  secondaryModel: claude-haiku-4-5-20251001
+  # Secret in agentgateway-system holding the Anthropic API key; delivered by External Secrets
+  # Operator from the secrets manager path eacp/gateway/anthropic (see platform/charts/eacp-system).
+  apiKeySecret: anthropic-api-key

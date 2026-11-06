@@ -1,0 +1,47 @@
+name: nightly-redteam
+
+# Red-teaming spends model tokens and takes long, so it runs nightly against a deployed
+# environment, not per pull request (ADR 0046). The target URL and a client credential come from
+# repository secrets. Results are uploaded as artefacts and summarised in the job log.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promptfoo:
+    name: promptfoo red-team against the gateway
+    runs-on: ubuntu-latest
+    env:
+      EACP_GATEWAY_URL: ${{ secrets.EACP_GATEWAY_URL }}
+      EACP_KEYCLOAK_TOKEN_URL: ${{ secrets.EACP_KEYCLOAK_TOKEN_URL }}
+      EACP_REDTEAM_CLIENT_ID: ${{ secrets.EACP_REDTEAM_CLIENT_ID }}
+      EACP_REDTEAM_CLIENT_SECRET: ${{ secrets.EACP_REDTEAM_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Obtain a client-credentials token for the red-team agent identity
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -sS -X POST "$EACP_KEYCLOAK_TOKEN_URL" \
+            -d grant_type=client_credentials \
+            -d client_id="$EACP_REDTEAM_CLIENT_ID" \
+            -d client_secret="$EACP_REDTEAM_CLIENT_SECRET" \
+            -d audience=eacp-llm | jq -r .access_token)
+          echo "::add-mask::$TOKEN"
+          echo "EACP_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+      - name: Generate and run the red-team suite
+        run: |
+          cd promptfoo
+          npx --yes promptfoo@latest redteam run --config promptfooconfig.yaml --output ../dist/redteam.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: redteam-results
+          path: dist/redteam.json

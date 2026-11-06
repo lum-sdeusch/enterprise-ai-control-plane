@@ -1,0 +1,112 @@
+# Policies on the LLM path: identity, prompt guard to the adapter, token budgets.
+
+# Identity on LLM routes. Tokens issued by the eacp realm carry both gateway audiences (see the
+# client scopes in platform/keycloak/realm-import.yaml), so one gateway-level provider serves
+# MCP and LLM traffic. Per-route MCP policies add protected-resource metadata on top.
+# TODO(verify): precedence between a Gateway-level jwtAuthentication policy and the per-route
+# ones the mcp-tool chart renders; if they conflict, move this to the models' route.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-jwt
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.keycloak.issuer | quote }}
+          audiences:
+            - eacp-llm
+            - eacp-mcp
+          jwks:
+            remote:
+              backendRef:
+                name: {{ .Values.keycloak.serviceName }}
+                kind: Service
+                namespace: {{ .Values.keycloak.namespace }}
+                port: {{ .Values.keycloak.port }}
+              jwksPath: /realms/eacp/protocol/openid-connect/certs
+---
+# Prompt guard: every prompt and every completion goes to the adapter. The adapter reuses the
+# analysis it already did for the routing callout (keyed by content hash) so the second look is
+# cheap. Request phase may Pass, Mask (PII bound for an external model) or Reject (secrets,
+# injection, class not allowed for the label). Response phase may Pass or Mask.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-prompt-guard
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    # TODO(verify): promptGuard target kind when models are AgentgatewayModel resources rather
+    # than an AgentgatewayBackend behind an HTTPRoute. Documented examples target an HTTPRoute.
+    - group: agentgateway.dev
+      kind: AgentgatewayModel
+      name: eacp-auto
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: eacp-adapter
+                namespace: eacp-system
+                port: {{ .Values.keycloak.port }}
+              headers:
+                ":path": '"/v1/llm/request"'
+                x-eacp-sub: jwt.sub
+                x-eacp-team: 'has(jwt.team) ? jwt.team : ""'
+                x-eacp-groups: 'has(jwt.groups) ? jwt.groups.join(",") : ""'
+                x-eacp-clearance: 'has(jwt.clearance) ? jwt.clearance : ""'
+                x-eacp-agent: 'has(jwt.act) && has(jwt.act.client_id) ? jwt.act.client_id : (has(jwt.azp) ? jwt.azp : "")'
+                x-eacp-conversation-id: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
+                x-eacp-model: llm.requestModel
+                traceparent: 'has(request.headers["traceparent"]) ? request.headers["traceparent"] : ""'
+        response:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: eacp-adapter
+                namespace: eacp-system
+                port: {{ .Values.keycloak.port }}
+              headers:
+                ":path": '"/v1/llm/response"'
+                x-eacp-sub: jwt.sub
+                x-eacp-team: 'has(jwt.team) ? jwt.team : ""'
+                x-eacp-conversation-id: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
+                x-eacp-model: llm.requestModel
+                traceparent: 'has(request.headers["traceparent"]) ? request.headers["traceparent"] : ""'
+---
+# Token budgets keyed by identity claims. The gateway's units are seconds, minutes and hours, so
+# the per-day figures from teams/*/manifest.yaml are divided by 24. Exhaustion returns 429 with
+# a clear message; that is demo scenario 6.
+# TODO(generate): emit this from teams/*/manifest.yaml in scripts/compile-manifests.py once the
+# per-key semantics are confirmed (one entry applies the same budget to every value of the key).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-budgets
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  traffic:
+    rateLimit:
+      local:
+        - requests: 60
+          unit: Minutes
+          key: jwt.sub
+        - tokens: 8334
+          unit: Hours
+          key: jwt.sub
+        - tokens: 83334
+          unit: Hours
+          key: jwt.team

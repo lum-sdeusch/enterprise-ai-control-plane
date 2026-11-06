@@ -1,0 +1,164 @@
+# ClickHouse for the POC: one StatefulSet, two databases. eacp_audit holds the adapter's
+# decision records behind an insert-only user; eacp_logs holds gateway access logs written by
+# the collector. Langfuse brings its own ClickHouse through its chart (ADR 0020/0022 note the
+# production split: the audit database must be controlled by a different team than operations).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telemetry
+  labels:
+    app.kubernetes.io/part-of: eacp
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-init
+  namespace: telemetry
+data:
+  01-audit.sql: |
+    CREATE DATABASE IF NOT EXISTS eacp_audit;
+
+    -- One row per policy decision phase. Unsampled. Columns mirror the control mapping in
+    -- docs/control-mapping.md so an auditor can read this table without the code.
+    CREATE TABLE IF NOT EXISTS eacp_audit.events
+    (
+        ts               DateTime64(3) CODEC(Delta, ZSTD),
+        event_id         UUID,
+        trace_id         String,
+        span_id          String,
+        conversation_id  String,
+        phase            LowCardinality(String),
+        subject          String,
+        team             LowCardinality(String),
+        groups           Array(String),
+        agent            LowCardinality(String),
+        actor_chain      String,
+        server           LowCardinality(String),
+        tool             String,
+        model_requested  LowCardinality(String),
+        model_selected   LowCardinality(String),
+        route_label      LowCardinality(String),
+        decision         LowCardinality(String),   -- allow | deny | approval_required | approved | quarantine | fail_closed
+        reasons          Array(String),
+        redactions       UInt16,
+        findings         String,                    -- JSON summary: counts and labels, never content
+        taint_before     String,
+        taint_after      String,
+        pin_status       LowCardinality(String),
+        policy_revision  String,
+        approver         String,
+        latency_ms       UInt32,
+        adapter_version  LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMM(ts)
+    ORDER BY (team, ts, subject)
+    TTL toDateTime(ts) + INTERVAL 400 DAY;
+
+    CREATE USER IF NOT EXISTS eacp_audit_writer IDENTIFIED WITH sha256_password BY '${AUDIT_WRITER_PASSWORD}';
+    GRANT INSERT ON eacp_audit.events TO eacp_audit_writer;
+
+    CREATE USER IF NOT EXISTS eacp_audit_reader IDENTIFIED WITH sha256_password BY '${AUDIT_READER_PASSWORD}';
+    GRANT SELECT ON eacp_audit.* TO eacp_audit_reader;
+  02-logs.sql: |
+    CREATE DATABASE IF NOT EXISTS eacp_logs;
+    CREATE USER IF NOT EXISTS logs_writer IDENTIFIED WITH sha256_password BY '${LOGS_WRITER_PASSWORD}';
+    GRANT CREATE TABLE, INSERT ON eacp_logs.* TO logs_writer;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: telemetry
+spec:
+  selector:
+    app.kubernetes.io/name: clickhouse
+  ports:
+    - name: http
+      port: 8123
+    - name: native
+      port: 9000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: telemetry
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+        app.kubernetes.io/part-of: eacp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: clickhouse
+          # TODO(pin): pin by digest.
+          image: clickhouse/clickhouse-server:25.8
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+          env:
+            - name: AUDIT_WRITER_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: audit-writer-password } }
+            - name: AUDIT_READER_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: audit-reader-password } }
+            - name: LOGS_WRITER_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: logs-writer-password } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - name: init
+          configMap:
+            name: clickhouse-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Passwords come from the secrets manager; this ExternalSecret materialises them.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: clickhouse-users
+  namespace: telemetry
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  target:
+    name: clickhouse-users
+  dataFrom:
+    - extract:
+        key: eacp/telemetry/clickhouse

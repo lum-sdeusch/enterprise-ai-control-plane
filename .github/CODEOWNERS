@@ -1,0 +1,36 @@
+# Personal repository: one owner for every path until GitHub teams exist. Replace @lum-sdeusch with the
+# organisation teams named in the layer comments when the repository moves to an organisation.
+# Code ownership enforces the policy layering described in docs/design.md section 8.
+# Replace the team handles with your organisation's GitHub teams.
+#
+# Layer 0: global guardrails. Only the security team can change what applies to everyone.
+/policies/rego/00-global/            @lum-sdeusch
+/policies/tests/                     @lum-sdeusch
+/schemas/                            @lum-sdeusch @lum-sdeusch
+/guardrails/                         @lum-sdeusch
+
+# Platform: gateway, adapter, telemetry, admission, identity.
+/platform/                           @lum-sdeusch
+/charts/                             @lum-sdeusch
+/adapter/                            @lum-sdeusch
+/scripts/                            @lum-sdeusch
+/.github/                            @lum-sdeusch
+
+# Layer 1: team policies. Team leads own their team's rules and manifest.
+/policies/rego/10-teams/support/     @lum-sdeusch
+/teams/support/                      @lum-sdeusch
+
+# Layer 2: tool policies and manifests. Tool owners own their tool.
+/policies/rego/20-tools/email-send/  @lum-sdeusch
+/tools/customer-db/                  @lum-sdeusch
+/tools/tickets/                      @lum-sdeusch
+/tools/web-fetch/                    @lum-sdeusch
+/tools/email-send/                   @lum-sdeusch
+/tools/poisoned-demo/                @lum-sdeusch
+
+# Layer 3: agent policies and manifests.
+/policies/rego/30-agents/            @lum-sdeusch
+/agents/                             @lum-sdeusch
+
+# Design and decisions.
+/docs/                               @lum-sdeusch @lum-sdeusch

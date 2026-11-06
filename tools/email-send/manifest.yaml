@@ -1,0 +1,39 @@
+apiVersion: eacp.dev/v1alpha1
+kind: ToolManifest
+metadata:
+  name: email-send
+  team: support
+  owner: support-platform@example.com
+  description: Demo email MCP server (demo/servers/email-send, FastMCP) delivering to Mailpit over SMTP. High risk, exfiltration capable, approval required.
+spec:
+  image: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/demo-email-send@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  transport: http
+  http:
+    port: 8000
+    path: /mcp
+  env:
+    - name: SMTP_HOST
+      value: mailpit.demo.svc.cluster.local
+    - name: SMTP_PORT
+      value: "1025"
+  egress:
+    - namespace: demo
+      port: 1025
+  credentials:
+    mode: none
+  requiredGroups: [support]
+  outputTrust: trusted
+  tools:
+    - name: send_email
+      description: Send an email to a customer.
+      riskTier: high
+      capability: exfil-capable
+      outputClassification: public
+      approval:
+        mode: required
+        approvers: support-approvers
+        allowSelf: false
+  pins:
+    tools: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    prompts: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    resources: sha256:0000000000000000000000000000000000000000000000000000000000000000

@@ -1,0 +1,56 @@
+# Values for the langfuse/langfuse-k8s Helm chart. Open items from docs/design.md section 11:
+# the S3-compatible store (SeaweedFS) and the Redis-compatible cache (Valkey) must be verified
+# against Langfuse at build time; both are wired here as external services.
+# TODO(verify): value names against the chart version in platform/argocd/apps/10-platform.yaml.
+langfuse:
+  nextauth:
+    url: http://langfuse.127.0.0.1.sslip.io:8080
+    secret:
+      secretKeyRef: { name: langfuse-secrets, key: nextauth-secret }
+  salt:
+    secretKeyRef: { name: langfuse-secrets, key: salt }
+  encryptionKey:
+    secretKeyRef: { name: langfuse-secrets, key: encryption-key }
+  additionalEnv:
+    # OIDC single sign-on through Keycloak and enforcement so local accounts are not used.
+    - name: AUTH_KEYCLOAK_CLIENT_ID
+      value: langfuse
+    - name: AUTH_KEYCLOAK_CLIENT_SECRET
+      valueFrom: { secretKeyRef: { name: langfuse-secrets, key: keycloak-client-secret } }
+    - name: AUTH_KEYCLOAK_ISSUER
+      value: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+    - name: AUTH_DISABLE_USERNAME_PASSWORD
+      value: "true"
+    - name: LANGFUSE_INIT_ORG_ID
+      value: team-support
+    - name: LANGFUSE_INIT_ORG_NAME
+      value: "Team support"
+    - name: LANGFUSE_INIT_PROJECT_ID
+      value: support-assistant
+    - name: LANGFUSE_INIT_PROJECT_NAME
+      value: "support assistant"
+postgresql:
+  deploy: false
+  host: langfuse-db-rw.telemetry.svc.cluster.local   # CloudNativePG cluster, see cnpg.yaml
+  auth:
+    username: langfuse
+    database: langfuse
+    existingSecret: langfuse-db-app
+    secretKeys:
+      userPasswordKey: password
+clickhouse:
+  deploy: true   # Langfuse's own ClickHouse; the audit database is a separate instance (ADR 0022)
+redis:
+  deploy: false
+  host: langfuse-valkey.telemetry.svc.cluster.local
+  port: 6379
+s3:
+  deploy: false
+  endpoint: http://seaweedfs-s3.telemetry.svc.cluster.local:8333
+  forcePathStyle: true
+  bucket: langfuse
+  region: us-east-1
+  accessKeyId:
+    secretKeyRef: { name: langfuse-s3, key: access-key }
+  secretAccessKey:
+    secretKeyRef: { name: langfuse-s3, key: secret-key }

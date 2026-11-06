@@ -1,0 +1,19 @@
+apiVersion: eacp.dev/v1alpha1
+kind: TeamManifest
+metadata:
+  name: support
+  owner: support-leads@example.com
+  description: Customer support engineering. Owns the demo tools and the support assistant agent.
+spec:
+  groups:
+    - support
+  approverGroups:
+    - support-approvers
+  allowedModelClasses:
+    - external
+    - inhouse
+  budgets:
+    tokensPerUserPerDay: 200000
+    tokensPerTeamPerDay: 2000000
+  defaultClearance: internal
+  namespace: team-support

@@ -1,0 +1,48 @@
+# Wave 1: one Application per tool manifest. The git files generator reads each
+# tools/*/manifest.yaml and exposes its fields, so the destination namespace comes from the
+# manifest's team. The chart is rendered with the profile's platform values first and the
+# manifest second, exactly like `make chart-template`.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: eacp-tools
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+        revision: main
+        files:
+          - path: "tools/*/manifest.yaml"
+  template:
+    metadata:
+      name: "tool-{{ .metadata.name }}"
+      labels:
+        eacp.dev/team: "{{ .metadata.team }}"
+      annotations:
+        eacp.dev/owner: "{{ .metadata.owner }}"
+    spec:
+      project: default
+      sources:
+        - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+          targetRevision: main
+          path: charts/mcp-tool
+          helm:
+            releaseName: "{{ .metadata.name }}"
+            valueFiles:
+              - "$repo/platform/values/laptop.yaml"   # profile overlay patches this
+              - "$repo/tools/{{ .metadata.name }}/manifest.yaml"
+        - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+          targetRevision: main
+          ref: repo
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "team-{{ .metadata.team }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

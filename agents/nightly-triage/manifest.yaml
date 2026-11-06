@@ -1,0 +1,20 @@
+apiVersion: eacp.dev/v1alpha1
+kind: AgentManifest
+metadata:
+  name: nightly-triage
+  team: support
+  owner: support-leads@example.com
+  description: Scheduled agent (demo/agent-nightly-triage, Pydantic AI) that triages open tickets every night. No human in the loop, so it gets no external model, no exfiltration-capable tools, and a confidential ceiling.
+spec:
+  kind: scheduled
+  identity:
+    clientId: agent-nightly-triage
+    serviceAccount: nightly-triage
+  riskTier: medium
+  allowedTools:
+    - tickets/*
+  allowedModelClasses:
+    - inhouse
+  maxClassification: confidential
+  schedule: "0 2 * * *"
+  image: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/agent-nightly-triage@sha256:0000000000000000000000000000000000000000000000000000000000000000

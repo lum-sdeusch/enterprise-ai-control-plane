@@ -1,0 +1,48 @@
+# Wave 1: the demo environment. Mailpit, the demo PostgreSQL with seeded customer data,
+# LibreChat, and the scheduled agent's CronJob. Everything here is demo scaffolding, not part of
+# the control plane.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: demo/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: librechat
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/librechat-ai
+      chart: librechat-chart
+      targetRevision: 1.9.3   # TODO(verify)
+      helm:
+        valueFiles:
+          - $values/demo/librechat/values.yaml
+    - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: librechat
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

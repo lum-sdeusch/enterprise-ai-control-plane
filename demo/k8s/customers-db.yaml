@@ -1,0 +1,31 @@
+# The demo customer database behind tools/customer-db (bytebase/dbhub). Seeded with obviously
+# fake personal data so scenario 3 has restricted rows to read.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: customers
+  namespace: demo
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6   # TODO(pin)
+  storage:
+    size: 1Gi
+  bootstrap:
+    initdb:
+      database: customers
+      owner: app
+      postInitApplicationSQL:
+        - CREATE TABLE customers (id serial PRIMARY KEY, name text, email text, phone text, iban text, plan text, notes text);
+        - INSERT INTO customers (name, email, phone, iban, plan, notes) VALUES ('Jane Doe', 'jane.doe@customer.example', '+1 415-555-0134', 'DE89370400440532013000', 'enterprise', 'Escalated twice in Q3');
+        - INSERT INTO customers (name, email, phone, iban, plan, notes) VALUES ('Omar Haddad', 'omar@customer.example', '+44 20 7946 0958', 'GB29NWBK60161331926819', 'pro', 'Invoice dispute open');
+        - INSERT INTO customers (name, email, phone, iban, plan, notes) VALUES ('Priya Nair', 'priya.nair@customer.example', '+91 98765 43210', 'FR1420041010050500013M02606', 'free', '');
+        - CREATE ROLE readonly LOGIN PASSWORD 'readonly-demo';
+        - GRANT CONNECT ON DATABASE customers TO readonly;
+        - GRANT USAGE ON SCHEMA public TO readonly;
+        - GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+# The DSN for tools/customer-db comes from the secrets manager at eacp/tools/customer-db
+# (key DSN), for example postgresql://readonly:readonly-demo@customers-rw.demo.svc.cluster.local:5432/customers
+# scripts/up.sh seeds OpenBao with it on the laptop profile.

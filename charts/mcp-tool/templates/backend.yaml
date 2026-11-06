@@ -1,0 +1,18 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: {{ include "mcp-tool.name" . }}
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+spec:
+  mcp:
+    targets:
+      - name: {{ include "mcp-tool.name" . }}
+        static:
+          backendRef:
+            name: {{ include "mcp-tool.name" . }}
+          port: 80
+          # TODO(verify): protocol enum for Streamable HTTP targets (docs examples show SSE) and
+          # whether a `path` field is needed when the server serves MCP at a sub-path.
+          protocol: StreamableHTTP

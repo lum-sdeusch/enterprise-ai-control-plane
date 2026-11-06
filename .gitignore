@@ -1,0 +1,26 @@
+# build outputs
+/bin/
+/dist/
+adapter/bin/
+*.tar.gz
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# node
+node_modules/
+
+# local secrets and env
+.env
+*.local.yaml
+platform/secrets/
+
+# editors
+.idea/
+.vscode/
+*.swp

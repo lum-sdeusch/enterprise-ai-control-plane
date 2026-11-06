@@ -1,0 +1,100 @@
+{{- /*
+Default deny in both directions. Ingress only from the gateway namespace on the MCP port.
+Egress only to DNS plus the manifest's allow-list. Standard NetworkPolicy cannot express
+hostnames; fqdn rules render as CiliumNetworkPolicy when platform.networkPolicy.fqdn is cilium
+and are otherwise listed in an annotation so the gap is visible, not silent.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mcp-tool.name" . }}
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+  annotations:
+    {{- $fqdns := list }}
+    {{- range .Values.spec.egress }}{{ if .fqdn }}{{ $fqdns = append $fqdns (printf "%s:%d" .fqdn (int .port)) }}{{ end }}{{ end }}
+    eacp.dev/egress-fqdn-unenforced: {{ if and $fqdns (ne .Values.platform.networkPolicy.fqdn "cilium") }}{{ join "," $fqdns | quote }}{{ else }}""{{ end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mcp-tool.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.platform.gateway.namespace }}
+      ports:
+        - port: {{ include "mcp-tool.targetPort" . }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- range .Values.spec.egress }}
+    {{- if .cidr }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        - port: {{ .port }}
+          protocol: {{ .protocol | default "TCP" }}
+    {{- else if .namespace }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+      ports:
+        - port: {{ .port }}
+          protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
+    {{- end }}
+{{- if and $fqdns (eq .Values.platform.networkPolicy.fqdn "cilium") }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "mcp-tool.name" . }}-fqdn
+  namespace: {{ include "mcp-tool.namespace" . }}
+  labels:
+    {{- include "mcp-tool.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "mcp-tool.selectorLabels" . | nindent 6 }}
+  egress:
+    {{- range .Values.spec.egress }}
+    {{- if .fqdn }}
+    - toFQDNs:
+        - {{ if hasPrefix "*." .fqdn }}matchPattern{{ else }}matchName{{ end }}: {{ .fqdn | quote }}
+      toPorts:
+        - ports:
+            - port: {{ .port | quote }}
+              protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
+    {{- end }}
+    # DNS must be allowed and proxied for toFQDNs to work.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+{{- end }}

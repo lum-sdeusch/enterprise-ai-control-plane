@@ -1,0 +1,7 @@
+apiVersion: v2
+name: eacp-gateway
+description: agentgateway configuration for the Enterprise AI Control Plane - the Gateway, the aggregate MCP endpoint, LLM models with classification-aware routing, identity, budgets and observability policies.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"

@@ -25,8 +25,9 @@ jobs:
       - run: pip install jsonschema pyyaml
       - run: python scripts/validate-manifests.py
       - run: python scripts/compile-manifests.py
-      - name: Fail if compiled data is stale in the PR
-        run: git diff --exit-code -- policies/eacp/data.json platform/keycloak/realm-import.yaml
+      - run: python scripts/sync-chart-schema.py
+      - name: Fail if generated files are stale in the PR
+        run: git diff --exit-code -- policies/eacp/manifests.json platform/keycloak/realm-import.yaml platform/generated/ charts/mcp-tool/values.schema.json
 
   policies:
     name: OPA format, check and test

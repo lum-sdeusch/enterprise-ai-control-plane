@@ -43,7 +43,7 @@ login() {
   [[ -n "$TOKEN" ]] || { echo "OpenBao login as openbao-seeder failed"; exit 1; }
 }
 
-exists() { printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT $1 >/dev/null 2>&1"; }
+exists() { printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT $1 >/dev/null 2>&1" 2>/dev/null; }
 
 field() { printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT -field=$2 $1"; }
 

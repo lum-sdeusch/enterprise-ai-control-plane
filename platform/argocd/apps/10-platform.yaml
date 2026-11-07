@@ -266,16 +266,29 @@ spec:
     chart: seaweedfs
     targetRevision: 4.52.0
     helm:
+      # PVCs and emptyDir logs instead of the chart's hostPath defaults, which the telemetry
+      # namespace's baseline Pod Security level rejects.
       values: |
         s3:
           enabled: true
           port: 8333
+          logs: { type: emptyDir }
         master:
           replicas: 1
+          data: { type: persistentVolumeClaim, size: 1Gi }
+          logs: { type: emptyDir }
         volume:
           replicas: 1
+          dataDirs:
+            - name: data1
+              type: persistentVolumeClaim
+              size: 5Gi
+              maxVolumes: 0
+          logs: { type: emptyDir }
         filer:
           replicas: 1
+          data: { type: persistentVolumeClaim, size: 1Gi }
+          logs: { type: emptyDir }
   destination:
     server: https://kubernetes.default.svc
     namespace: telemetry

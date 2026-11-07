@@ -124,8 +124,8 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ghcr.io/${{ github.repository }}/eacp-${{ matrix.image }}:${{ github.sha }}
           load: ${{ github.event_name != 'push' }}
-      # Trivy: pin this action to a commit SHA before relying on it (see ADR 0025).
-      - uses: aquasecurity/trivy-action@0.28.0
+      # Third-party actions are pinned to a commit SHA (ADR 0025).
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}/eacp-${{ matrix.image }}:${{ github.sha }}
           format: table
@@ -152,7 +152,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: sigstore/cosign-installer@v3
-      - run: pip install pyyaml mcp-scanner
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+      # Cisco mcp-scanner is published on PyPI as cisco-ai-mcp-scanner.
+      - run: pip install pyyaml cisco-ai-mcp-scanner==4.8.7
       - name: Gate changed manifests
         run: scripts/tool-gate.sh origin/${{ github.base_ref || 'main' }}
 

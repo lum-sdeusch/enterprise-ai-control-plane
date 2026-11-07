@@ -49,8 +49,9 @@ coredns_rewrites() {
     grep -qF "$rule" <<<"$corefile" || missing+=("$rule")
   done
   if ((${#missing[@]} == 0)); then echo "    already set"; return; fi
-  corefile="$(awk -v add="$(printf '    %s\n' "${missing[@]}")" \
-    '{print} /^ *ready$/ {print add}' <<<"$corefile")"
+  # The rules go through the environment: BSD awk (macOS) rejects a newline in an -v value.
+  corefile="$(ADD="$(printf '    %s\n' "${missing[@]}")" \
+    awk '{print} /^ *ready$/ {print ENVIRON["ADD"]}' <<<"$corefile")"
   kubectl patch configmap coredns -n kube-system --type merge \
     -p "$(jq -n --arg c "$corefile" '{data: {Corefile: $c}}')" >/dev/null
   kubectl rollout restart deployment/coredns -n kube-system >/dev/null

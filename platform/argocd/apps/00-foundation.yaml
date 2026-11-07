@@ -199,7 +199,7 @@ spec:
                 }
               }
               initialize "roles" {
-                # External Secrets Operator reads through the ClusterSecretStore in platform/secrets.
+                # External Secrets Operator reads through the ClusterSecretStore in platform/secret-store.
                 request "external-secrets" {
                   operation = "update"
                   path      = "auth/kubernetes/role/external-secrets"

@@ -32,10 +32,9 @@ bao_in_pod() {
 }
 
 login() {
-  local i
-  for i in $(seq 1 60); do
-    kubectl get serviceaccount openbao-seeder -n "$NS" >/dev/null 2>&1 && break
-    [[ $i == 60 ]] && { echo "ServiceAccount $NS/openbao-seeder never appeared (secret-store app)"; exit 1; }
+  local deadline=$((SECONDS + ${EACP_SEED_WAIT:-900}))
+  until kubectl get serviceaccount openbao-seeder -n "$NS" >/dev/null 2>&1; do
+    ((SECONDS < deadline)) || { echo "ServiceAccount $NS/openbao-seeder never appeared (secret-store app)"; exit 1; }
     sleep 5
   done
   TOKEN="$(kubectl create token openbao-seeder -n "$NS" --duration=10m |

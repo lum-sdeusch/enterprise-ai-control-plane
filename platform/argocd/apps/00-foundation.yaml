@@ -5,6 +5,8 @@ kind: Application
 metadata:
   name: eacp-generated
   namespace: argocd
+  labels:
+    eacp.dev/source: repo   # scripts/up.sh retargets these at EACP_REVISION
   annotations:
     argocd.argoproj.io/sync-wave: "-3"
 spec:
@@ -29,14 +31,16 @@ metadata:
 spec:
   project: default
   source:
+    # agentgateway v1.7.0 builds against sigs.k8s.io/gateway-api v1.7.0-rc.3 (its go.mod) and its
+    # docs require at least v1.6.3; v1.7.0 is the matching final release. Standard channel.
     repoURL: https://github.com/kubernetes-sigs/gateway-api.git
-    targetRevision: v1.4.0   # TODO(verify): the Gateway API release agentgateway v1.7 targets
+    targetRevision: v1.7.0
     path: config/crd/standard
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
     automated: { prune: false, selfHeal: true }
-    syncOptions: [ServerSideApply=true, Replace=true]
+    syncOptions: [ServerSideApply=true]
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -50,7 +54,7 @@ spec:
   source:
     repoURL: https://charts.jetstack.io
     chart: cert-manager
-    targetRevision: v1.18.2   # TODO(verify)
+    targetRevision: v1.21.3
     helm:
       values: |
         crds:
@@ -74,7 +78,7 @@ spec:
   source:
     repoURL: https://kyverno.github.io/kyverno/
     chart: kyverno
-    targetRevision: 3.7.0   # TODO(verify): chart for Kyverno 1.19.x
+    targetRevision: 3.9.2   # Kyverno v1.19.2
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
@@ -94,7 +98,7 @@ spec:
   source:
     repoURL: https://charts.external-secrets.io
     chart: external-secrets
-    targetRevision: 0.20.1   # TODO(verify)
+    targetRevision: 2.14.0
     helm:
       values: |
         installCRDs: true
@@ -117,10 +121,22 @@ spec:
   source:
     repoURL: https://openbao.github.io/openbao-helm
     chart: openbao
-    targetRevision: 0.17.0   # TODO(verify): chart for OpenBao 2.7
+    targetRevision: 0.30.7   # OpenBao v2.7.2
     helm:
+      # Laptop bring-up with no manual unseal and no root token: the static seal reads a 32-byte
+      # key from the openbao-static-seal Secret (scripts/up.sh creates it once per cluster), and
+      # self-initialisation mounts the KV store, enables Kubernetes auth and writes the two
+      # policies and roles below on first start. ADR 0030; production replaces the static seal
+      # with a KMS seal (ticket 14).
       values: |
         server:
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          extraSecretEnvironmentVars:
+            - envName: BAO_STATIC_SEAL_KEY
+              secretName: openbao-static-seal
+              secretKey: key
           standalone:
             enabled: true
             config: |
@@ -131,6 +147,76 @@ spec:
               }
               storage "raft" {
                 path = "/openbao/data"
+              }
+              seal "static" {
+                current_key_id = "eacp-laptop-1"
+                current_key    = "env://BAO_STATIC_SEAL_KEY"
+              }
+              initialize "mounts" {
+                request "kv" {
+                  operation = "update"
+                  path      = "sys/mounts/secret"
+                  data = {
+                    type    = "kv"
+                    options = { version = "2" }
+                  }
+                }
+                request "kubernetes-auth" {
+                  operation = "update"
+                  path      = "sys/auth/kubernetes"
+                  data      = { type = "kubernetes" }
+                }
+                request "kubernetes-auth-config" {
+                  operation = "update"
+                  path      = "auth/kubernetes/config"
+                  data      = { kubernetes_host = "https://kubernetes.default.svc" }
+                }
+              }
+              initialize "policies" {
+                request "eso-read" {
+                  operation = "update"
+                  path      = "sys/policies/acl/eso-read"
+                  data = {
+                    policy = <<-EOP
+                      path "secret/data/eacp/*" { capabilities = ["read"] }
+                      path "secret/metadata/eacp/*" { capabilities = ["read", "list"] }
+                    EOP
+                  }
+                }
+                request "seeder" {
+                  operation = "update"
+                  path      = "sys/policies/acl/eacp-seeder"
+                  data = {
+                    policy = <<-EOP
+                      path "secret/data/eacp/*" { capabilities = ["create", "update", "read"] }
+                      path "secret/metadata/eacp/*" { capabilities = ["read", "list"] }
+                    EOP
+                  }
+                }
+              }
+              initialize "roles" {
+                # External Secrets Operator reads through the ClusterSecretStore in platform/secrets.
+                request "external-secrets" {
+                  operation = "update"
+                  path      = "auth/kubernetes/role/external-secrets"
+                  data = {
+                    bound_service_account_names      = ["external-secrets"]
+                    bound_service_account_namespaces = ["external-secrets"]
+                    token_policies                   = ["eso-read"]
+                    token_ttl                        = "1h"
+                  }
+                }
+                # scripts/seed-openbao.sh logs in with a short-lived token for this account.
+                request "seeder" {
+                  operation = "update"
+                  path      = "auth/kubernetes/role/seeder"
+                  data = {
+                    bound_service_account_names      = ["openbao-seeder"]
+                    bound_service_account_namespaces = ["openbao"]
+                    token_policies                   = ["eacp-seeder"]
+                    token_ttl                        = "15m"
+                  }
+                }
               }
           dataStorage:
             size: 2Gi
@@ -155,7 +241,7 @@ spec:
   source:
     repoURL: https://cloudnative-pg.github.io/charts
     chart: cloudnative-pg
-    targetRevision: 0.26.0   # TODO(verify)
+    targetRevision: 0.29.1   # CloudNativePG 1.30.1
   destination:
     server: https://kubernetes.default.svc
     namespace: cnpg-system
@@ -174,7 +260,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/keycloak/keycloak-k8s-resources.git
-    targetRevision: "26.8.2"   # TODO(verify): tag layout of keycloak-k8s-resources
+    targetRevision: "26.8.2"   # tag per Keycloak release; kubernetes/ holds CRDs + operator
     path: kubernetes
   destination:
     server: https://kubernetes.default.svc
@@ -193,12 +279,34 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: cr.agentgateway.dev/charts
+    repoURL: cr.agentgateway.dev/charts   # OCI; registered in platform/argocd/install-values.yaml
     chart: agentgateway-crds
     targetRevision: 1.7.0
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+# kmcp is installed from its published Helm charts (CRDs and controller are separate charts),
+# not with `kmcp install`; scripts/up.sh records this in the eacp-bringup ConfigMap.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kmcp-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/kagent-dev/kmcp/helm   # OCI; registered in platform/argocd/install-values.yaml
+    chart: kmcp-crds
+    targetRevision: 0.4.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kmcp-system
   syncPolicy:
     automated: { prune: false, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
@@ -213,11 +321,9 @@ metadata:
 spec:
   project: default
   source:
-    # TODO(verify): kmcp's published Helm chart location and version; `kmcp install` is the
-    # documented CLI path.
     repoURL: ghcr.io/kagent-dev/kmcp/helm
     chart: kmcp
-    targetRevision: 0.10.0
+    targetRevision: 0.4.0
   destination:
     server: https://kubernetes.default.svc
     namespace: kmcp-system

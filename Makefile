@@ -107,10 +107,10 @@ test: validate compile policy-test chart-template adapter guardrails adrs ## Run
 	@echo "all checks passed"
 
 # ---------------------------------------------------------------------------
-# Cluster (skeletons)
+# Cluster
 # ---------------------------------------------------------------------------
 .PHONY: up
-up: ## Create the kind cluster and bootstrap Argo CD with the chosen PROFILE (skeleton)
+up: ## Create the kind cluster, install Argo CD, seed OpenBao and wait for the platform (PROFILE, EACP_REVISION)
 	PROFILE=$(PROFILE) scripts/up.sh
 
 .PHONY: down

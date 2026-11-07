@@ -6,6 +6,8 @@ kind: Application
 metadata:
   name: demo
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
@@ -26,14 +28,16 @@ kind: Application
 metadata:
   name: librechat
   namespace: argocd
+  labels:
+    eacp.dev/source: repo-values
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   sources:
-    - repoURL: ghcr.io/librechat-ai
-      chart: librechat-chart
-      targetRevision: 1.9.3   # TODO(verify)
+    - repoURL: ghcr.io/librechat-ai/librechat-chart   # OCI; registered in platform/argocd/install-values.yaml
+      chart: librechat
+      targetRevision: 3.0.0   # LibreChat v0.8.8
       helm:
         valueFiles:
           - $values/demo/librechat/values.yaml

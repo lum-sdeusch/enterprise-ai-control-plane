@@ -9,6 +9,13 @@ metadata:
     app.kubernetes.io/part-of: eacp
 spec:
   gatewayClassName: agentgateway
+  {{- if .Values.gateway.nodePort }}
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: agentgateway-proxy
+  {{- end }}
   listeners:
     - name: http
       protocol: HTTP
@@ -23,3 +30,24 @@ spec:
               eacp.dev/routes: "true"
 # TODO(profile cloud-gpu): add an https listener with a cert-manager issued certificate and
 # redirect http to it; the laptop profile stays on plain http behind the kind port mapping.
+{{- if .Values.gateway.nodePort }}
+---
+# Laptop profile: publish the generated proxy Service on a fixed NodePort, which the kind port
+# mapping exposes on host port 8080 (scripts/kind-config.yaml). The overlay is merged into the
+# Service agentgateway generates for this Gateway.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: agentgateway-proxy
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: eacp
+spec:
+  service:
+    spec:
+      type: NodePort
+      ports:
+        - name: http
+          port: 8080
+          nodePort: {{ .Values.gateway.nodePort }}
+{{- end }}

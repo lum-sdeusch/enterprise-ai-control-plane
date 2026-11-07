@@ -107,20 +107,42 @@ Six scenarios, each one a policy test fixture, an end-to-end test, and a stage d
 
 ## Quick start (laptop profile)
 
-Target: 16 GB RAM, 4 cores, no GPU. You bring Docker, `kind`, `kubectl`, Go 1.26, Python 3.12
-and an Anthropic API key for the external model. Everything else runs in the cluster.
+Target: 16 GB RAM, 4 cores, no GPU. You bring Docker, `kind`, `kubectl`, `helm`, `jq`, Go 1.26,
+Python 3.12 and an Anthropic API key for the external model. Everything else runs in the cluster.
+On macOS with Homebrew and Docker Desktop (which ships `kubectl`), give Docker Desktop at least
+12 GB of memory and install the rest with:
 
 ```bash
-make tools        # builds opa, helm, buf and the protobuf generators into ./bin via `go install`
+brew install kind helm go jq   # tested with kind 0.33.0 (Kubernetes 1.37), helm 4.3.1, go 1.27.3
+```
+
+```bash
+make tools        # builds opa, buf and the protobuf generators (and helm if missing) into ./bin
 python3.12 -m venv .venv && source .venv/bin/activate   # Homebrew and Debian Pythons refuse a system-wide pip install
 pip install -e "guardrails[test]" jsonschema pyyaml
 make test         # schemas, policy tests, chart render, adapter build and tests, guardrail tests, ADRs
+export ANTHROPIC_API_KEY=...   # optional for the bring-up; the LLM path needs it
 make up PROFILE=laptop
 make demo
 ```
 
-`make up` is a skeleton today. The order it will follow, and the components it installs, are in
-[scripts/up.sh](scripts/up.sh).
+`make up` creates the kind cluster `eacp`, installs Argo CD, applies
+`platform/argocd/root-laptop.yaml`, seeds OpenBao with the demo secrets
+([scripts/seed-openbao.sh](scripts/seed-openbao.sh)) and returns when every Application in the
+foundation and platform-store waves is Synced and Healthy (about 10 minutes on a first run, most of
+it image pulls). Running it again is harmless; `make down` deletes the cluster. Argo CD syncs from
+`main` on GitHub; to bring up another branch or a fork, push it and run
+`EACP_REVISION=<branch> [EACP_REPO=<git url>] make up`.
+
+| Host port | What | URL |
+|---|---|---|
+| 8080 | agentgateway | http://gw.127.0.0.1.sslip.io:8080 |
+| 8081 | Keycloak (realm `eacp`; alice, bob, carol with temporary password `changeme-<name>`) | http://auth.127.0.0.1.sslip.io:8081 |
+| 8082 | Argo CD (user `admin`, password in the `argocd-initial-admin-secret` Secret) | http://127.0.0.1:8082 |
+
+The same `auth.` and `gw.` names resolve inside the cluster (CoreDNS rewrite), so the Keycloak
+issuer is identical for browsers and pods. Wave 0 and later (the eacp charts, models, tools,
+LibreChat, Langfuse) are later tickets and may not be healthy yet.
 
 ## Onboarding a tool in one pull request
 

@@ -45,8 +45,8 @@ coredns_rewrites() {
     print "    rewrite name exact auth.127.0.0.1.sslip.io keycloak-nodeport.keycloak.svc.cluster.local answer auto"
     print "    rewrite name exact gw.127.0.0.1.sslip.io agentgateway-proxy.agentgateway-system.svc.cluster.local answer auto"
   }' <<<"$corefile")"
-  kubectl create configmap coredns -n kube-system --from-literal=Corefile="$corefile" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl patch configmap coredns -n kube-system --type merge \
+    -p "$(jq -n --arg c "$corefile" '{data: {Corefile: $c}}')" >/dev/null
   kubectl rollout restart deployment/coredns -n kube-system >/dev/null
   echo "    auth.127.0.0.1.sslip.io -> keycloak-nodeport, gw.127.0.0.1.sslip.io -> agentgateway-proxy"
 }

@@ -1,4 +1,5 @@
-# Wave -3 and -2: things everything else depends on. Each is a plain Application so a reader
+# Wave -3 and -2: things everything else depends on (plus the generated team namespaces, which
+# sync in wave 0). Each is a plain Application so a reader
 # can see exactly which upstream chart or manifest set is in play.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -8,7 +9,10 @@ metadata:
   labels:
     eacp.dev/source: repo   # scripts/up.sh retargets these at EACP_REVISION
   annotations:
-    argocd.argoproj.io/sync-wave: "-3"
+    # Wave 0, not earlier: the generated ReferenceGrants live in eacp-system (created by the
+    # eacp-system chart in wave 0) and keycloak. Team namespaces are first needed by the tools
+    # in wave 1.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
   source:

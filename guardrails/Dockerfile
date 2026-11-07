@@ -8,6 +8,11 @@ COPY eacp_guardrails ./eacp_guardrails
 RUN pip install --no-cache-dir --prefix=/install .
 
 FROM python:3.12-slim
+# Apply Debian security updates published since the base image was built, so a fixed advisory
+# never fails the image scan while the upstream image catches up.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin eacp
 COPY --from=build /install /usr/local
 USER 10001

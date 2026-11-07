@@ -107,6 +107,8 @@ jobs:
       packages: write
       id-token: write
     strategy:
+      # Each image reports its own scan result; one failing must not cancel the other.
+      fail-fast: false
       matrix:
         image: [adapter, guardrails]
     steps:

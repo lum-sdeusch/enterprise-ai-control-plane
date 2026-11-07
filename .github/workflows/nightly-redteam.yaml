@@ -4,9 +4,11 @@ name: nightly-redteam
 # environment, not per pull request (ADR 0046). The target URL and a client credential come from
 # repository secrets. Results are uploaded as artefacts and summarised in the job log.
 
+# The schedule is off until a deployed environment and the four EACP_* secrets exist (tickets 10
+# and 13); without them every nightly run fails. Re-enable the cron once they do.
 on:
-  schedule:
-    - cron: "17 3 * * *"
+  # schedule:
+  #   - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:

@@ -112,6 +112,7 @@ and an Anthropic API key for the external model. Everything else runs in the clu
 
 ```bash
 make tools        # builds opa, helm, buf and the protobuf generators into ./bin via `go install`
+python3.12 -m venv .venv && source .venv/bin/activate   # Homebrew and Debian Pythons refuse a system-wide pip install
 pip install -e "guardrails[test]" jsonschema pyyaml
 make test         # schemas, policy tests, chart render, adapter build and tests, guardrail tests, ADRs
 make up PROFILE=laptop

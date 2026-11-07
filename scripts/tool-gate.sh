@@ -5,7 +5,7 @@
 #
 #   scripts/tool-gate.sh origin/main
 #
-# Requires: python3 with pyyaml, cosign, trivy (or grype), mcp-scanner, docker. Each check can
+# Requires: python3 with pyyaml, cosign, trivy (or grype), mcp-scanner (pip: cisco-ai-mcp-scanner), docker. Each check can
 # be skipped with EACP_GATE_SKIP="cosign,trivy,mcpscan" for local dry runs; CI never skips.
 set -euo pipefail
 
@@ -67,7 +67,10 @@ for manifest in $changed; do
       hostport=$(docker port "$cid" "$port" | head -1)
       sleep 3
       # Cisco mcp-scanner (Apache-2.0): tool poisoning and prompt injection in descriptions.
-      mcp-scanner --server-url "http://${hostport}${path}" --analyzers yara,llm --format summary \
+      # The llm analyzer needs a provider key; without one the gate runs the yara rules only.
+      analyzers=yara
+      [[ -n "${MCP_SCANNER_LLM_API_KEY:-}" ]] && analyzers=yara,llm
+      mcp-scanner --server-url "http://${hostport}${path}" --analyzers "$analyzers" --format summary \
         && echo "   ok   mcp-scanner" || { echo "   FAIL mcp-scanner flagged the server"; fail=1; }
       python3 scripts/pin-tools.py "tools/$name" --url "http://${hostport}${path}" --check \
         && echo "   ok   pins match the live server" || { echo "   FAIL pins differ from the live server"; fail=1; }

@@ -11,7 +11,7 @@ bring-up twice is harmless.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (PR 2)
+**Status:** done (PR 3)
 
 - [x] All applications in the foundation and platform-store waves show Synced and Healthy in Argo CD after one `make up`.
 - [x] No chart or manifest source in the Argo CD applications still carries a verification marker; the Gateway API release matches what agentgateway 1.7 expects; kmcp is installed from its published chart or by its CLI, and the bring-up script records which.

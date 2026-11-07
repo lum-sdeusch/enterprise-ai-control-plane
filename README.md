@@ -211,8 +211,15 @@ the Go adapter compiles and its unit tests pass; the Python guardrail service's 
 component facts in the design were verified against primary sources on 2026-11-06, with URLs in
 `docs/research/`.
 
-Not yet done: nothing has run on a cluster. The build-time spikes listed in
-[docs/design.md section 11](docs/design.md#11-open-items-to-confirm-or-spike-before-building)
+On a kind cluster (2026-11-07, macOS with Docker Desktop): `make up PROFILE=laptop` brings every
+foundation and platform-store Application (sync waves -3 to -1) to Synced and Healthy with no manual
+step, OpenBao is seeded and the ExternalSecrets resolve, Keycloak serves the `eacp` realm and a demo
+user can log in, and the host ports above answer. Every chart and git source in `platform/argocd/`
+is pinned to a release that exists.
+
+Not yet done: the wave 0 and 1 Applications (the eacp charts, models, Langfuse, tools, demo) do not
+sync yet; later tickets in `.scratch/scaffold-to-poc/` bring them up. The build-time spikes listed
+in [docs/design.md section 11](docs/design.md#11-open-items-to-confirm-or-spike-before-building)
 are open. Fields marked `TODO(verify)` in `platform/` and `charts/` name the exact CRD details to
 confirm against a running agentgateway and kmcp.
 

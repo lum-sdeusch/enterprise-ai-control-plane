@@ -1,9 +1,12 @@
 # Keycloak 26.8 through the Keycloak operator. The realm is imported from the generated
 # realm-import.yaml. Three features matter for this design (ADR 0023):
-#   - standard token exchange: GA, no flag.
-#   - delegation with actor tokens and the `act` claim: preview in 26.8.
+#   - standard token exchange (token-exchange-standard:v2): GA and on by default, no flag.
+#   - delegation with actor tokens and the `act` claim: token-exchange-delegation, preview in
+#     26.8, which needs parameterized-scopes.
 #   - identity-assertion-jwt (Enterprise-Managed Authorization): experimental since 26.7.
-# TODO(verify): exact feature names for the preview/experimental flags in 26.8.
+# Names checked against org.keycloak.common.Profile at tag 26.8.2. Fine-grained admin
+# permissions v2 is on by default; the v1 `admin-fine-grained-authz` and legacy `token-exchange`
+# features are deprecated and would replace the v2 defaults if enabled.
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -12,6 +15,9 @@ metadata:
 spec:
   instances: 1
   image: quay.io/keycloak/keycloak:26.8.2   # TODO(pin)
+  # A custom `image` makes the operator start Keycloak with --optimized, which needs an image
+  # built with these features; the stock image builds them at startup instead.
+  startOptimized: false
   db:
     vendor: postgres
     host: keycloak-db-rw.keycloak.svc.cluster.local
@@ -27,15 +33,18 @@ spec:
     httpEnabled: true
     httpPort: 8080
   hostname:
-    # laptop profile; the cloud-gpu overlay patches this to https://auth.eacp.example.com
-    hostname: http://auth.127.0.0.1.sslip.io:8080
+    # laptop profile: the kind port mapping publishes Keycloak on host port 8081 (NodePort 30081,
+    # nodeport.yaml), and CoreDNS resolves the same name inside the cluster (scripts/up.sh), so
+    # the issuer is identical for browsers and pods. The cloud-gpu overlay patches this to
+    # https://auth.eacp.example.com.
+    hostname: http://auth.127.0.0.1.sslip.io:8081
     strict: false
   proxy:
     headers: xforwarded
   features:
     enabled:
-      - token-exchange
-      - admin-fine-grained-authz
+      - token-exchange-delegation
+      - parameterized-scopes
       - identity-assertion-jwt
   additionalOptions:
     - name: log-level

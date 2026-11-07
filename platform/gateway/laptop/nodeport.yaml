@@ -1,0 +1,17 @@
+# Merged into the Service agentgateway generates for the Gateway: a fixed NodePort that the kind
+# port mapping exposes on host port 8080 (scripts/kind-config.yaml).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: agentgateway-proxy
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: eacp
+spec:
+  service:
+    spec:
+      type: NodePort
+      ports:
+        - name: http
+          port: 8080
+          nodePort: 30080

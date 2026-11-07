@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: cr.agentgateway.dev/charts
+    repoURL: cr.agentgateway.dev/charts   # OCI; registered in platform/argocd/install-values.yaml
     chart: agentgateway
     targetRevision: 1.7.0
   destination:
@@ -19,11 +19,65 @@ spec:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
 ---
+# The Gateway (platform/gateway/base/gateway.yaml) and, on the laptop, its NodePort.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+  labels:
+    eacp.dev/source: repo
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/gateway/laptop   # profile overlay patches this
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+    # The Gateway admits routes only from namespaces labelled eacp.dev/routes=true; this one hosts
+    # the platform's own HTTPRoutes (the eacp-gateway chart). Argo CD applies these labels to the
+    # namespace even when an earlier wave created it.
+    managedNamespaceMetadata:
+      labels:
+        app.kubernetes.io/part-of: eacp
+        eacp.dev/routes: "true"
+---
+# The openbao ClusterSecretStore and the seeder ServiceAccount. Healthy once External Secrets
+# Operator can log in to OpenBao; scripts/seed-openbao.sh then writes the demo values.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secret-store
+  namespace: argocd
+  labels:
+    eacp.dev/source: repo
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/secret-store
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: keycloak
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
@@ -44,6 +98,8 @@ kind: Application
 metadata:
   name: telemetry-stores
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
@@ -64,6 +120,8 @@ kind: Application
 metadata:
   name: eacp-gateway
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -86,6 +144,8 @@ kind: Application
 metadata:
   name: eacp-system
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -109,6 +169,8 @@ kind: Application
 metadata:
   name: kyverno-policies
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -127,6 +189,8 @@ kind: Application
 metadata:
   name: models
   namespace: argocd
+  labels:
+    eacp.dev/source: repo
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -146,6 +210,8 @@ kind: Application
 metadata:
   name: otel-collector
   namespace: argocd
+  labels:
+    eacp.dev/source: repo-values
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -153,7 +219,7 @@ spec:
   sources:
     - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
       chart: opentelemetry-collector
-      targetRevision: 0.135.0   # TODO(verify)
+      targetRevision: 0.178.2
       helm:
         valueFiles:
           - $values/platform/telemetry/otel-collector-values.yaml
@@ -171,6 +237,8 @@ kind: Application
 metadata:
   name: jaeger
   namespace: argocd
+  labels:
+    eacp.dev/source: repo-values
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -178,7 +246,7 @@ spec:
   sources:
     - repoURL: https://jaegertracing.github.io/helm-charts
       chart: jaeger
-      targetRevision: 4.0.0   # TODO(verify): chart for Jaeger v2
+      targetRevision: 4.16.1   # Jaeger v2.22.0
       helm:
         valueFiles:
           - $values/platform/telemetry/jaeger-values.yaml
@@ -204,18 +272,31 @@ spec:
     # S3-compatible store for Langfuse (open item 2 in docs/design.md). Apache-2.0.
     repoURL: https://seaweedfs.github.io/seaweedfs/helm
     chart: seaweedfs
-    targetRevision: 4.0.0   # TODO(verify)
+    targetRevision: 4.52.0
     helm:
+      # PVCs and emptyDir logs instead of the chart's hostPath defaults, which the telemetry
+      # namespace's baseline Pod Security level rejects.
       values: |
         s3:
           enabled: true
           port: 8333
+          logs: { type: emptyDir }
         master:
           replicas: 1
+          data: { type: persistentVolumeClaim, size: 1Gi }
+          logs: { type: emptyDir }
         volume:
           replicas: 1
+          dataDirs:
+            - name: data1
+              type: persistentVolumeClaim
+              size: 5Gi
+              maxVolumes: 0
+          logs: { type: emptyDir }
         filer:
           replicas: 1
+          data: { type: persistentVolumeClaim, size: 1Gi }
+          logs: { type: emptyDir }
   destination:
     server: https://kubernetes.default.svc
     namespace: telemetry
@@ -227,6 +308,8 @@ kind: Application
 metadata:
   name: langfuse
   namespace: argocd
+  labels:
+    eacp.dev/source: repo-values
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -234,7 +317,7 @@ spec:
   sources:
     - repoURL: https://langfuse.github.io/langfuse-k8s
       chart: langfuse
-      targetRevision: 1.5.0   # TODO(verify): chart for Langfuse v4
+      targetRevision: 2.2.3   # Langfuse v4.75.0
       helm:
         valueFiles:
           - $values/platform/telemetry/langfuse-values.yaml

@@ -1,0 +1,64 @@
+# Values for the argo/argo-cd Helm chart that scripts/up.sh installs before applying the root
+# application. Kept small for the laptop profile: no Dex, no notifications, plain HTTP behind the
+# kind port mapping (host 8082 -> NodePort 30082).
+dex:
+  enabled: false
+notifications:
+  enabled: false
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30082
+configs:
+  params:
+    server.insecure: true
+    # A sync that has waited this long (for example the root app behind a wave that never gets
+    # healthy) is terminated and retried on the latest commit instead of holding the old one.
+    controller.sync.timeout.seconds: 900
+  cm:
+    # App-of-apps sync waves only wait for a child Application if Argo CD can compute its health;
+    # this check was removed from the defaults in Argo CD 1.8 and has to be added back.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil and obj.status.health ~= nil then
+        hs.status = obj.status.health.status
+        if obj.status.health.message ~= nil then
+          hs.message = obj.status.health.message
+        end
+      end
+      return hs
+    # The realm import is a Job run by the Keycloak operator. Argo CD ships a check for the
+    # Keycloak resource but not for this one.
+    resource.customizations.health.k8s.keycloak.org_KeycloakRealmImport: |
+      hs = { status = "Progressing", message = "waiting for the realm import" }
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for _, c in ipairs(obj.status.conditions) do
+          if c.type == "HasErrors" and c.status == "True" then
+            return { status = "Degraded", message = c.message or "realm import failed" }
+          end
+          if c.type == "Done" and c.status == "True" then
+            hs = { status = "Healthy", message = c.message or "realm imported" }
+          end
+        end
+      end
+      return hs
+  # OCI Helm registries referenced with `chart:` in the Applications. Argo CD matches an
+  # Application's repoURL against these entries to know the source is OCI.
+  repositories:
+    agentgateway:
+      name: agentgateway
+      type: helm
+      enableOCI: "true"
+      url: cr.agentgateway.dev/charts
+    kmcp:
+      name: kmcp
+      type: helm
+      enableOCI: "true"
+      url: ghcr.io/kagent-dev/kmcp/helm
+    librechat:
+      name: librechat
+      type: helm
+      enableOCI: "true"
+      url: ghcr.io/librechat-ai/librechat-chart

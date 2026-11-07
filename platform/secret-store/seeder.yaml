@@ -1,0 +1,11 @@
+# Identity for scripts/seed-openbao.sh. The script requests a ten-minute token for this account
+# (kubectl create token) and exchanges it for an OpenBao token limited to writing eacp/*.
+# Nothing runs as this account inside the cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-seeder
+  namespace: openbao
+  labels:
+    app.kubernetes.io/part-of: eacp
+automountServiceAccountToken: false

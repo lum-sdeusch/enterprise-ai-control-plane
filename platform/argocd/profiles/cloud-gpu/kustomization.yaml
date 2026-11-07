@@ -45,3 +45,11 @@ patches:
       - op: replace
         path: /spec/source/path
         value: platform/gateway/cloud-gpu
+  # The laptop's static seal and self-initialisation do not apply; ticket 14 adds a KMS seal.
+  - target:
+      kind: Application
+      name: openbao
+    patch: |
+      - op: replace
+        path: /spec/sources/0/helm/valueFiles
+        value: [$values/platform/openbao/values.yaml]

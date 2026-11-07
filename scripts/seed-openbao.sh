@@ -43,8 +43,21 @@ login() {
   [[ -n "$TOKEN" ]] || { echo "OpenBao login as openbao-seeder failed"; exit 1; }
 }
 
-exists() { printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT $1 >/dev/null 2>&1" 2>/dev/null; }
+fail() { echo "seed-openbao: $*" >&2; exit 1; }
 
+# exists PATH: 0 when PATH holds a value, 1 when OpenBao says there is none. Any other failure
+# (permission, network, a missing pod) aborts, so put_once never mistakes it for "absent" and
+# rotates a generated secret.
+exists() {
+  local out rc=0
+  out="$(printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT $1 2>&1 >/dev/null" 2>&1)" || rc=$?
+  ((rc == 0)) && return 0
+  [[ "$out" == *"No value found at $MOUNT/data/$1"* ]] && return 1
+  fail "reading $1 from OpenBao failed (exit $rc): $out"
+}
+
+# field PATH KEY: prints the value. Callers assign it to a variable on its own line (so set -e
+# sees a failure) and check it is not empty.
 field() { printf '%s\n' "$TOKEN" | bao_in_pod "bao kv get -mount=$MOUNT -field=$2 $1"; }
 
 put() { # put PATH JSON
@@ -69,14 +82,21 @@ seed_anthropic() {
   fi
 }
 
+# copy_once PATH USERNAME KEY: a username/password pair whose password is KEY of the ClickHouse
+# users path. The adapter and the collector read their own copies; keep them equal to the store.
+copy_once() {
+  if exists "$1"; then log "kept  $1"; return; fi
+  local pass
+  pass="$(field eacp/telemetry/clickhouse "$3")"
+  [[ -n "$pass" ]] || fail "eacp/telemetry/clickhouse has no $3"
+  put "$1" "$(jq -n --arg u "$2" --arg p "$pass" '{username: $u, password: $p}')"
+}
+
 seed_clickhouse() {
   put_once eacp/telemetry/clickhouse "$(jq -n --arg a "$(rand)" --arg r "$(rand)" --arg l "$(rand)" \
     '{"audit-writer-password": $a, "audit-reader-password": $r, "logs-writer-password": $l}')"
-  # The adapter and the collector read their own copies; keep them equal to the store's users.
-  put_once eacp/audit/writer "$(jq -n --arg p "$(field eacp/telemetry/clickhouse audit-writer-password)" \
-    '{username: "eacp_audit_writer", password: $p}')"
-  put_once eacp/telemetry/logs-writer "$(jq -n --arg p "$(field eacp/telemetry/clickhouse logs-writer-password)" \
-    '{username: "logs_writer", password: $p}')"
+  copy_once eacp/audit/writer eacp_audit_writer audit-writer-password
+  copy_once eacp/telemetry/logs-writer logs_writer logs-writer-password
 }
 
 seed_secrets() {
@@ -104,9 +124,13 @@ kc_admin_token() {
 
 kc_set_client_secret() { # kc_set_client_secret ADMIN_TOKEN CLIENT_ID SECRET
   local auth id
+  [[ -n "$2" && -n "$3" ]] || fail "kc_set_client_secret needs a client id and a secret"
   auth="Authorization: Bearer $1"
-  id="$(curl -sf -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients?clientId=$2" | jq -r '.[0].id')"
-  [[ -n "$id" && "$id" != null ]] || { echo "client $2 not found in realm $KC_REALM"; exit 1; }
+  # clientId is a search filter, not an exact match: keep only the client whose id is exactly $2.
+  id="$(curl -sfG -H @<(printf '%s' "$auth") --data-urlencode "clientId=$2" \
+    "$KC_URL/admin/realms/$KC_REALM/clients" |
+    jq -r --arg c "$2" '[.[] | select(.clientId == $c)] | if length == 1 then .[0].id else empty end')"
+  [[ -n "$id" ]] || fail "client $2 not found (exactly once) in realm $KC_REALM"
   curl -sf -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients/$id" |
     jq --arg s "$3" '.secret = $s' |
     curl -sf -X PUT -H @<(printf '%s' "$auth") -H 'Content-Type: application/json' \
@@ -118,9 +142,13 @@ seed_keycloak() {
   login
   local at path
   at="$(kc_admin_token)"
-  [[ -n "$at" && "$at" != null ]] || { echo "Keycloak admin login at $KC_URL failed"; exit 1; }
+  [[ -n "$at" && "$at" != null ]] || fail "Keycloak admin login at $KC_URL failed"
+  local client secret
   for path in eacp/gateway/oauth-client eacp/adapter/oauth-client; do
-    kc_set_client_secret "$at" "$(field "$path" client-id)" "$(field "$path" client-secret)"
+    client="$(field "$path" client-id)"
+    secret="$(field "$path" client-secret)"
+    [[ -n "$client" && -n "$secret" ]] || fail "$path is missing client-id or client-secret"
+    kc_set_client_secret "$at" "$client" "$secret"
   done
 }
 

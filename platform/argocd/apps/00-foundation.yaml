@@ -118,114 +118,23 @@ kind: Application
 metadata:
   name: openbao
   namespace: argocd
+  labels:
+    eacp.dev/source: repo-values
   annotations:
     argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
-  source:
-    repoURL: https://openbao.github.io/openbao-helm
-    chart: openbao
-    targetRevision: 0.30.7   # OpenBao v2.7.2
-    helm:
-      # Laptop bring-up with no manual unseal and no root token: the static seal reads a 32-byte
-      # key from the openbao-static-seal Secret (scripts/up.sh creates it once per cluster), and
-      # self-initialisation mounts the KV store, enables Kubernetes auth and writes the two
-      # policies and roles below on first start. ADR 0030; production replaces the static seal
-      # with a KMS seal (ticket 14).
-      values: |
-        server:
-          resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 512Mi }
-          extraSecretEnvironmentVars:
-            - envName: BAO_STATIC_SEAL_KEY
-              secretName: openbao-static-seal
-              secretKey: key
-          standalone:
-            enabled: true
-            config: |
-              ui = true
-              listener "tcp" {
-                address = "[::]:8200"
-                tls_disable = 1
-              }
-              storage "raft" {
-                path = "/openbao/data"
-              }
-              seal "static" {
-                current_key_id = "eacp-laptop-1"
-                current_key    = "env://BAO_STATIC_SEAL_KEY"
-              }
-              initialize "mounts" {
-                request "kv" {
-                  operation = "update"
-                  path      = "sys/mounts/secret"
-                  data = {
-                    type    = "kv"
-                    options = { version = "2" }
-                  }
-                }
-                request "kubernetes-auth" {
-                  operation = "update"
-                  path      = "sys/auth/kubernetes"
-                  data      = { type = "kubernetes" }
-                }
-                request "kubernetes-auth-config" {
-                  operation = "update"
-                  path      = "auth/kubernetes/config"
-                  data      = { kubernetes_host = "https://kubernetes.default.svc" }
-                }
-              }
-              initialize "policies" {
-                request "eso-read" {
-                  operation = "update"
-                  path      = "sys/policies/acl/eso-read"
-                  data = {
-                    policy = <<-EOP
-                      path "secret/data/eacp/*" { capabilities = ["read"] }
-                      path "secret/metadata/eacp/*" { capabilities = ["read", "list"] }
-                    EOP
-                  }
-                }
-                request "seeder" {
-                  operation = "update"
-                  path      = "sys/policies/acl/eacp-seeder"
-                  data = {
-                    policy = <<-EOP
-                      path "secret/data/eacp/*" { capabilities = ["create", "update", "read"] }
-                      path "secret/metadata/eacp/*" { capabilities = ["read", "list"] }
-                    EOP
-                  }
-                }
-              }
-              initialize "roles" {
-                # External Secrets Operator reads through the ClusterSecretStore in platform/secret-store.
-                request "external-secrets" {
-                  operation = "update"
-                  path      = "auth/kubernetes/role/external-secrets"
-                  data = {
-                    bound_service_account_names      = ["external-secrets"]
-                    bound_service_account_namespaces = ["external-secrets"]
-                    token_policies                   = ["eso-read"]
-                    token_ttl                        = "1h"
-                  }
-                }
-                # scripts/seed-openbao.sh logs in with a short-lived token for this account.
-                request "seeder" {
-                  operation = "update"
-                  path      = "auth/kubernetes/role/seeder"
-                  data = {
-                    bound_service_account_names      = ["openbao-seeder"]
-                    bound_service_account_namespaces = ["openbao"]
-                    token_policies                   = ["eacp-seeder"]
-                    token_ttl                        = "15m"
-                  }
-                }
-              }
-          dataStorage:
-            size: 2Gi
-        injector:
-          enabled: false
+  sources:
+    - repoURL: https://openbao.github.io/openbao-helm
+      chart: openbao
+      targetRevision: 0.30.7   # OpenBao v2.7.2
+      helm:
+        valueFiles:
+          - $values/platform/openbao/values.yaml
+          - $values/platform/openbao/values-laptop.yaml   # cloud-gpu profile drops this file
+    - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: openbao

@@ -36,22 +36,28 @@ kind_cluster() {
 
 # Resolve the laptop hostnames inside the cluster too, so a pod reaches Keycloak and the gateway
 # at the same URLs (and Keycloak issuer) as the browser.
+COREDNS_REWRITES=(
+  "rewrite name exact auth.127.0.0.1.sslip.io keycloak-nodeport.keycloak.svc.cluster.local answer auto"
+  "rewrite name exact gw.127.0.0.1.sslip.io agentgateway-proxy.agentgateway-system.svc.cluster.local answer auto"
+)
+
 coredns_rewrites() {
   step "CoreDNS: *.127.0.0.1.sslip.io inside the cluster"
-  local corefile
+  local corefile missing=() rule
   corefile="$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')"
-  if grep -q 'auth.127.0.0.1.sslip.io' <<<"$corefile"; then echo "    already set"; return; fi
-  corefile="$(awk '{print} /^ *ready$/ {
-    print "    rewrite name exact auth.127.0.0.1.sslip.io keycloak-nodeport.keycloak.svc.cluster.local answer auto"
-    print "    rewrite name exact gw.127.0.0.1.sslip.io agentgateway-proxy.agentgateway-system.svc.cluster.local answer auto"
-  }' <<<"$corefile")"
+  for rule in "${COREDNS_REWRITES[@]}"; do
+    grep -qF "$rule" <<<"$corefile" || missing+=("$rule")
+  done
+  if ((${#missing[@]} == 0)); then echo "    already set"; return; fi
+  corefile="$(awk -v add="$(printf '    %s\n' "${missing[@]}")" \
+    '{print} /^ *ready$/ {print add}' <<<"$corefile")"
   kubectl patch configmap coredns -n kube-system --type merge \
     -p "$(jq -n --arg c "$corefile" '{data: {Corefile: $c}}')" >/dev/null
   kubectl rollout restart deployment/coredns -n kube-system >/dev/null
-  echo "    auth.127.0.0.1.sslip.io -> keycloak-nodeport, gw.127.0.0.1.sslip.io -> agentgateway-proxy"
+  printf '    added: %s\n' "${missing[@]}"
 }
 
-argocd() {
+install_argocd() {
   step "Argo CD (chart $ARGOCD_CHART_VERSION)"
   helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm \
     --version "$ARGOCD_CHART_VERSION" --namespace argocd --create-namespace \
@@ -158,34 +164,41 @@ seed() {
 }
 
 # Applications in the foundation and platform-store waves, from the profile in this checkout.
-store_apps() {
-  kubectl kustomize "platform/argocd/profiles/$PROFILE" |
-    awk 'function flush() { if (kind == "Application" && wave <= -1) print name; kind = ""; name = ""; wave = 0 }
+# Filled once by load_store_apps; an empty list means the render failed, not that nothing is due.
+STORE_APPS=()
+
+load_store_apps() {
+  local rendered
+  rendered="$(kubectl kustomize "platform/argocd/profiles/$PROFILE")" ||
+    { echo "    cannot render platform/argocd/profiles/$PROFILE"; exit 1; }
+  # shellcheck disable=SC2207 # Application names have no spaces.
+  STORE_APPS=($(awk 'function flush() { if (kind == "Application" && wave <= -1) print name; kind = ""; name = ""; wave = 0 }
          /^---/ {flush(); next}
          /^kind: / {kind = $2}
          /^  name: / {name = $2}
          /argocd.argoproj.io\/sync-wave:/ {gsub(/"/, "", $2); wave = $2 + 0}
-         END {flush()}'
+         END {flush()}' <<<"$rendered"))
+  ((${#STORE_APPS[@]} > 0)) || { echo "    no Applications in waves <= -1 for profile $PROFILE"; exit 1; }
 }
 
 apps_settled() {
-  local status app bad=0
+  local status app
   status="$(kubectl get applications -n argocd -o json |
-    jq -r '.items[] | "\(.metadata.name) \(.status.sync.status // "-") \(.status.health.status // "-")"')"
-  for app in $(store_apps); do
-    grep -qx "$app Synced Healthy" <<<"$status" || bad=1
+    jq -r '.items[] | "\(.metadata.name) \(.status.sync.status // "-") \(.status.health.status // "-")"')" || return 1
+  for app in "${STORE_APPS[@]}"; do
+    grep -qx "$app Synced Healthy" <<<"$status" || return 1
   done
-  return $bad
 }
 
 wait_platform() {
-  step "waiting for the foundation and platform-store Applications (up to ${WAIT_TIMEOUT}s)"
+  load_store_apps
+  step "waiting for the ${#STORE_APPS[@]} foundation and platform-store Applications (up to ${WAIT_TIMEOUT}s)"
   if ! wait_for "the platform" apps_settled; then
     kubectl get applications -n argocd
     exit 1
   fi
   local app
-  for app in $(store_apps); do printf '    %-22s Synced Healthy\n' "$app"; done
+  for app in "${STORE_APPS[@]}"; do printf '    %-22s Synced Healthy\n' "$app"; done
 }
 
 summary() {
@@ -210,7 +223,7 @@ main() {
     kind_cluster
     coredns_rewrites
   fi
-  argocd
+  install_argocd
   if [[ "$PROFILE" == laptop ]]; then openbao_seal_key; fi
   root_app
   seed

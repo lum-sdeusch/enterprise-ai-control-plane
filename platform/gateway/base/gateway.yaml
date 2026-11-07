@@ -20,8 +20,9 @@ spec:
           from: Selector
           selector:
             matchLabels:
-              # Set on agentgateway-system and on every team-* namespace (generated from
-              # teams/*/manifest.yaml by scripts/compile-manifests.py).
+              # Set on agentgateway-system by the gateway Application's managedNamespaceMetadata
+              # (platform/argocd/apps/10-platform.yaml) and on every team-* namespace (generated
+              # from teams/*/manifest.yaml by scripts/compile-manifests.py).
               eacp.dev/routes: "true"
 # TODO(profile cloud-gpu): add an https listener with a cert-manager issued certificate and
 # redirect http to it; the laptop profile stays on plain http behind the kind port mapping.

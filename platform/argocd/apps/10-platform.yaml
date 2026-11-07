@@ -40,6 +40,14 @@ spec:
     namespace: agentgateway-system
   syncPolicy:
     automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+    # The Gateway admits routes only from namespaces labelled eacp.dev/routes=true; this one hosts
+    # the platform's own HTTPRoutes (the eacp-gateway chart). Argo CD applies these labels to the
+    # namespace even when an earlier wave created it.
+    managedNamespaceMetadata:
+      labels:
+        app.kubernetes.io/part-of: eacp
+        eacp.dev/routes: "true"
 ---
 # The openbao ClusterSecretStore and the seeder ServiceAccount. Healthy once External Secrets
 # Operator can log in to OpenBao; scripts/seed-openbao.sh then writes the demo values.

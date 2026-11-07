@@ -1,0 +1,22 @@
+# OpenBao values shared by every profile: one node, integrated Raft storage (ADR 0030).
+# values-laptop.yaml adds the static seal and self-initialisation for the laptop profile; the
+# cloud-gpu seal (KMS) and initialisation are ticket 14.
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  standalone:
+    enabled: true
+    config: |
+      ui = true
+      listener "tcp" {
+        address = "[::]:8200"
+        tls_disable = 1
+      }
+      storage "raft" {
+        path = "/openbao/data"
+      }
+  dataStorage:
+    size: 2Gi
+injector:
+  enabled: false

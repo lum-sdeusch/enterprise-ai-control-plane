@@ -1,6 +1,5 @@
 profile: cloud-gpu
 gateway:
   publicUrl: https://gw.eacp.example.com
-  nodePort: null
 keycloak:
   issuer: https://auth.eacp.example.com/realms/eacp

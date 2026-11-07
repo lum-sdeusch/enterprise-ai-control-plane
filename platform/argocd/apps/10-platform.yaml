@@ -19,6 +19,28 @@ spec:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
 ---
+# The Gateway (platform/gateway/base/gateway.yaml) and, on the laptop, its NodePort.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+  labels:
+    eacp.dev/source: repo
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
+    targetRevision: main
+    path: platform/gateway/laptop   # profile overlay patches this
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
 # The openbao ClusterSecretStore and the seeder ServiceAccount. Healthy once External Secrets
 # Operator can log in to OpenBao; scripts/seed-openbao.sh then writes the demo values.
 apiVersion: argoproj.io/v1alpha1

@@ -38,3 +38,10 @@ patches:
       - op: replace
         path: /spec/source/path
         value: platform/keycloak-cloud-gpu
+  - target:
+      kind: Application
+      name: gateway
+    patch: |
+      - op: replace
+        path: /spec/source/path
+        value: platform/gateway/cloud-gpu

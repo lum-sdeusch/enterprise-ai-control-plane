@@ -10,7 +10,7 @@ Sync waves order the bring-up:
 |---|---|
 | -3 | Gateway API CRDs, kmcp CRDs |
 | -2 | cert-manager, Kyverno, External Secrets Operator, OpenBao, CloudNativePG, Keycloak operator, agentgateway CRDs, kmcp |
-| -1 | agentgateway, the openbao ClusterSecretStore, Keycloak with the realm import, telemetry stores (ClickHouse, PostgreSQL, Valkey, SeaweedFS) |
+| -1 | agentgateway and the Gateway (`platform/gateway`), the openbao ClusterSecretStore, Keycloak with the realm import, telemetry stores (ClickHouse, PostgreSQL, Valkey, SeaweedFS) |
 | 0 | namespaces and ReferenceGrants generated from team manifests, eacp-gateway and eacp-system charts, Kyverno policies, models, OTel collector, Jaeger, Langfuse |
 | 1 | tools (ApplicationSet from `tools/*/manifest.yaml`), demo |
 

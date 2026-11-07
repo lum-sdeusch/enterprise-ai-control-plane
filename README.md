@@ -137,7 +137,7 @@ it image pulls). Running it again is harmless; `make down` deletes the cluster. 
 | Host port | What | URL |
 |---|---|---|
 | 8080 | agentgateway | http://gw.127.0.0.1.sslip.io:8080 |
-| 8081 | Keycloak (realm `eacp`; alice, bob, carol with temporary password `changeme-<name>`) | http://auth.127.0.0.1.sslip.io:8081 |
+| 8081 | Keycloak (realm `eacp`; demo users alice, bob, carol with password `changeme-<name>`) | http://auth.127.0.0.1.sslip.io:8081 |
 | 8082 | Argo CD (user `admin`, password in the `argocd-initial-admin-secret` Secret) | http://127.0.0.1:8082 |
 
 The same `auth.` and `gw.` names resolve inside the cluster (CoreDNS rewrite), so the Keycloak

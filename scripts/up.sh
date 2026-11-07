@@ -192,7 +192,7 @@ summary() {
   cat <<EOF
 
 Gateway     http://gw.127.0.0.1.sslip.io:8080      (MCP at /mcp, LLM at /v1, approvals at /approvals)
-Keycloak    http://auth.127.0.0.1.sslip.io:8081   (realm eacp; alice, bob, carol: password changeme-<name>, temporary)
+Keycloak    http://auth.127.0.0.1.sslip.io:8081   (realm eacp; demo users alice, bob, carol with password changeme-<name>)
 LibreChat   http://chat.127.0.0.1.sslip.io:3080
 Argo CD     http://127.0.0.1:8082                 (user admin, password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
 Langfuse    http://127.0.0.1:8083

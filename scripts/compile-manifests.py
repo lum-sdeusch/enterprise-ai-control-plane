@@ -29,6 +29,7 @@ LLM_AUDIENCE = "eacp-llm"
 # port: `claude mcp add --transport http --client-id eacp-mcp-public --callback-port 33418 ...`.
 MCP_PUBLIC_CLIENT = "eacp-mcp-public"
 MCP_CALLBACK_PORT = 33418
+DEFAULT_ROLES = f"default-roles-{REALM}"
 
 
 def _attr_mapper(name: str, attribute: str, claim: str) -> dict:
@@ -314,6 +315,9 @@ def _demo_users() -> list[dict]:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["restricted"]},
             "credentials": [{"type": "password", "value": "changeme-alice", "temporary": True}],
         },
@@ -325,6 +329,9 @@ def _demo_users() -> list[dict]:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support", "/support-approvers"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["confidential"]},
             "credentials": [{"type": "password", "value": "changeme-bob", "temporary": True}],
         },
@@ -337,6 +344,9 @@ def _demo_users() -> list[dict]:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["internal"]},
             "credentials": [{"type": "password", "value": "changeme-carol", "temporary": True}],
         },

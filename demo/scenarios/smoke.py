@@ -1,7 +1,7 @@
 """Gateway and identity smoke test (ticket 03): `python3 demo/scenarios/run.py --smoke`.
 
 Checks, for the tickets server's own route and for the aggregate endpoint:
-  - protected-resource metadata is served and names this resource and Keycloak;
+  - protected-resource metadata is served and names this resource and Keycloak's issuer;
   - a request without a token gets 401 with a resource_metadata pointer;
   - a token for the MCP audience is accepted; one for the LLM audience only, or for no gateway
     audience, is rejected;
@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 
 import httpx
-from run import GATEWAY, Report, Session, user_token
+from run import GATEWAY, TOKEN_URL, Report, Session, user_token
 
 SERVER = "tickets"
 TOOLS = {"list_tickets", "get_ticket", "create_ticket", "close_ticket"}
@@ -39,7 +39,8 @@ def initialize_status(path: str, token: str | None) -> httpx.Response:
 def check_metadata(rep: Report, path: str) -> None:
     resp = httpx.get(f"{GATEWAY}/.well-known/oauth-protected-resource{path}", timeout=10)
     body = resp.json() if resp.status_code == 200 else {}
-    ok = body.get("resource") == f"{GATEWAY}{path}" and bool(body.get("authorization_servers"))
+    issuer = TOKEN_URL.split("/protocol/")[0]
+    ok = body.get("resource") == f"{GATEWAY}{path}" and body.get("authorization_servers") == [issuer]
     rep.add(f"{path}: protected-resource metadata", ok, f"{resp.status_code} {body.get('authorization_servers')}")
     resp = initialize_status(path, None)
     challenge = resp.headers.get("www-authenticate", "")

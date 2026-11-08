@@ -399,6 +399,8 @@ spec:
       emailVerified: true
       groups:
       - /support
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support
@@ -417,6 +419,8 @@ spec:
       groups:
       - /support
       - /support-approvers
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support
@@ -434,6 +438,8 @@ spec:
       emailVerified: true
       groups:
       - /support
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support

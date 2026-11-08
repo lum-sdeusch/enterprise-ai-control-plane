@@ -330,6 +330,8 @@ spec:
       - email
       - eacp
       - eacp-mcp-audience
+      optionalClientScopes:
+      - offline_access
       attributes:
         pkce.code.challenge.method: S256
         eacp.kind: mcp-client

@@ -32,8 +32,6 @@ platform:
     gatewayClientId: eacp-gateway
     gatewayClientSecretName: eacp-gateway-oauth-client
     gatewayClientSecretPath: eacp/gateway/oauth-client
-    # Public client the gateway hands to MCP clients that ask for dynamic client registration.
-    mcpClientId: eacp-mcp-public
   secrets:
     clusterSecretStore: openbao
   kmcp:

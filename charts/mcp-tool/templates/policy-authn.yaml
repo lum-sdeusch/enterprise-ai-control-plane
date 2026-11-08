@@ -33,14 +33,18 @@ spec:
                 port: {{ .Values.platform.keycloak.port }}
               jwksPath: {{ .Values.platform.keycloak.jwksPath | quote }}
       # MCP authorization (agentgateway 1.7: a sibling of providers, which must then hold exactly
-      # one entry). The gateway serves the protected-resource and authorization-server metadata
-      # for this path and answers dynamic client registration itself with the pre-registered
-      # public client, so Keycloak never sees anonymous registrations.
+      # one entry). The protected-resource metadata names Keycloak itself as the authorization
+      # server. Without authorizationServers the gateway presents itself as the authorization
+      # server (issuer = this URL) while Keycloak stamps its own issuer on the authorization
+      # response, and clients that check RFC 9207 (Claude Code does) reject the login. Clients use
+      # the pre-registered public client eacp-mcp-public (`claude mcp add --client-id
+      # eacp-mcp-public --callback-port 33418 ...`); Keycloak refuses anonymous registration.
       mcp:
         provider: Keycloak
-        clientId: {{ .Values.platform.keycloak.mcpClientId | quote }}
         resourceMetadata:
           resource: {{ include "mcp-tool.resourceUrl" . | quote }}
+          authorizationServers:
+            - {{ .Values.platform.keycloak.issuer | quote }}
           scopesSupported:
             - openid
             - profile

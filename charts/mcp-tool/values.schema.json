@@ -412,8 +412,7 @@
             "tokenPath",
             "gatewayClientId",
             "gatewayClientSecretName",
-            "gatewayClientSecretPath",
-            "mcpClientId"
+            "gatewayClientSecretPath"
           ],
           "properties": {
             "issuer": {
@@ -450,9 +449,6 @@
               "type": "string"
             },
             "gatewayClientSecretPath": {
-              "type": "string"
-            },
-            "mcpClientId": {
               "type": "string"
             }
           }

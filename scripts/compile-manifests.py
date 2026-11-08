@@ -24,9 +24,9 @@ from eacp_manifests import ROOT, ManifestSet, load_all, report, to_opa_data  # n
 REALM = "eacp"
 MCP_AUDIENCE = "eacp-mcp"
 LLM_AUDIENCE = "eacp-llm"
-# Public client the gateway hands to MCP clients (Claude Code, IDEs) that ask for dynamic client
-# registration; Keycloak itself never accepts anonymous registrations. Loopback redirects on one
-# fixed port: `claude mcp add --callback-port 33418 ...`.
+# Pre-registered public client for MCP clients (Claude Code, IDEs): Keycloak refuses anonymous
+# dynamic registration, so clients are configured with this id and one fixed loopback callback
+# port: `claude mcp add --transport http --client-id eacp-mcp-public --callback-port 33418 ...`.
 MCP_PUBLIC_CLIENT = "eacp-mcp-public"
 MCP_CALLBACK_PORT = 33418
 
@@ -125,6 +125,9 @@ def _mcp_public_client() -> dict:
         "webOrigins": [],
         # MCP audience only: an MCP client's token is not accepted on the LLM path.
         "defaultClientScopes": ["basic", "profile", "email", "eacp", "eacp-mcp-audience"],
+        # Claude Code asks for offline_access (a refresh token that outlives the browser session);
+        # Keycloak creates that scope itself, and rejects the whole request if the client lacks it.
+        "optionalClientScopes": ["offline_access"],
         "attributes": {"pkce.code.challenge.method": "S256", "eacp.kind": "mcp-client"},
     }
 

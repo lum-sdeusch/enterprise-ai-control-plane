@@ -44,7 +44,7 @@ PLATFORM = {
         },
         "keycloak": {
             "type": "object",
-            "required": ["issuer", "serviceName", "namespace", "port", "realm", "mcpAudience", "jwksPath", "tokenPath", "gatewayClientId", "gatewayClientSecretName", "gatewayClientSecretPath", "mcpClientId"],
+            "required": ["issuer", "serviceName", "namespace", "port", "realm", "mcpAudience", "jwksPath", "tokenPath", "gatewayClientId", "gatewayClientSecretName", "gatewayClientSecretPath"],
             "properties": {
                 "issuer": {"type": "string", "pattern": "^https?://"},
                 "serviceName": {"type": "string"},
@@ -57,7 +57,6 @@ PLATFORM = {
                 "gatewayClientId": {"type": "string"},
                 "gatewayClientSecretName": {"type": "string"},
                 "gatewayClientSecretPath": {"type": "string"},
-                "mcpClientId": {"type": "string"},
             },
         },
         "secrets": {

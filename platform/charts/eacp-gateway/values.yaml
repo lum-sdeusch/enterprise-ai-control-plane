@@ -7,8 +7,6 @@ keycloak:
   serviceName: keycloak-service
   namespace: keycloak
   port: 8080
-  # Public client the gateway hands to MCP clients asking for dynamic client registration.
-  mcpClientId: eacp-mcp-public
 # true drops the aggregate endpoint's adapter hook. Off by default; set only by the eacp-gateway
 # Application for ticket 03, which proves the gateway and identity path before the adapter runs.
 guardrails:

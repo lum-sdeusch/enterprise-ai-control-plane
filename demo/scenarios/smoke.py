@@ -18,7 +18,8 @@ from run import GATEWAY, Report, Session, user_token
 
 SERVER = "tickets"
 TOOLS = {"list_tickets", "get_ticket", "create_ticket", "close_ticket"}
-# agentgateway's prefix for multiplexed targets (prefixMode Always on the aggregate backend).
+# The aggregate prefixes tool names with the target name, which the chart sets to the server
+# name (Service annotation agentgateway.dev/mcp-target-name; prefixMode Always).
 PREFIX = f"{SERVER}_"
 INIT = {
     "jsonrpc": "2.0",

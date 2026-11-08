@@ -1,8 +1,13 @@
 {{- if include "mcp-tool.deployable" . }}
 {{- /*
 One Service per server, labelled eacp.dev/mcp-server=true so the platform's virtual MCP backend
-(platform/agentgateway/mcp-virtual.yaml) aggregates every onboarded server behind the single
-/mcp endpoint, and referenced directly by this server's own AgentgatewayBackend for /mcp/<name>.
+(platform/charts/eacp-gateway/templates/mcp-virtual.yaml) aggregates every onboarded server
+behind the single /mcp endpoint, and referenced directly by this server's own
+AgentgatewayBackend for /mcp/<name>.
+
+For selected Services agentgateway 1.7 names the target "<service>-<port name>" and connects to
+/mcp unless told otherwise; the two annotations make the aggregate's tool prefix the server name
+("tickets_list_tickets", which the adapter splits on) and carry the manifest's MCP path.
 */ -}}
 apiVersion: v1
 kind: Service
@@ -12,7 +17,8 @@ metadata:
   labels:
     {{- include "mcp-tool.labels" . | nindent 4 }}
   annotations:
-    eacp.dev/mcp-path: {{ include "mcp-tool.mcpPath" . | quote }}
+    agentgateway.dev/mcp-target-name: {{ include "mcp-tool.name" . }}
+    agentgateway.dev/mcp-path: {{ include "mcp-tool.mcpPath" . | quote }}
 spec:
   selector:
     {{- include "mcp-tool.selectorLabels" . | nindent 4 }}

@@ -412,7 +412,8 @@
             "tokenPath",
             "gatewayClientId",
             "gatewayClientSecretName",
-            "gatewayClientSecretPath"
+            "gatewayClientSecretPath",
+            "mcpClientId"
           ],
           "properties": {
             "issuer": {
@@ -449,6 +450,9 @@
               "type": "string"
             },
             "gatewayClientSecretPath": {
+              "type": "string"
+            },
+            "mcpClientId": {
               "type": "string"
             }
           }
@@ -511,6 +515,24 @@
               "type": "integer",
               "minimum": 1000
             }
+          }
+        },
+        "guardrails": {
+          "type": "object",
+          "properties": {
+            "omitProcessor": {
+              "type": "boolean"
+            }
+          }
+        },
+        "skipPlaceholderImages": {
+          "type": "boolean"
+        },
+        "localImages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "@sha256:[0-9a-f]{64}$"
           }
         }
       }

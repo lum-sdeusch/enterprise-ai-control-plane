@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 agentgateway acts as the OAuth 2.1 resource server for this MCP server: it validates Keycloak
 JWTs against the realm JWKS, requires the MCP audience, and serves protected-resource metadata
@@ -31,18 +32,24 @@ spec:
                 namespace: {{ .Values.platform.keycloak.namespace }}
                 port: {{ .Values.platform.keycloak.port }}
               jwksPath: {{ .Values.platform.keycloak.jwksPath | quote }}
-          mcp:
-            provider: Keycloak
-            resourceMetadata:
-              resource: {{ include "mcp-tool.resourceUrl" . | quote }}
-              scopesSupported:
-                - openid
-                - profile
-                - email
-              bearerMethodsSupported:
-                - header
+      # MCP authorization (agentgateway 1.7: a sibling of providers, which must then hold exactly
+      # one entry). The gateway serves the protected-resource and authorization-server metadata
+      # for this path and answers dynamic client registration itself with the pre-registered
+      # public client, so Keycloak never sees anonymous registrations.
+      mcp:
+        provider: Keycloak
+        clientId: {{ .Values.platform.keycloak.mcpClientId | quote }}
+        resourceMetadata:
+          resource: {{ include "mcp-tool.resourceUrl" . | quote }}
+          scopesSupported:
+            - openid
+            - profile
+            - email
+          bearerMethodsSupported:
+            - header
     authorization:
       action: Allow
       policy:
         matchExpressions:
           - {{ include "mcp-tool.groupsCel" . | quote }}
+{{- end }}

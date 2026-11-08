@@ -2,8 +2,9 @@
 # Seed OpenBao with the demo secrets and hand the generated OAuth client secrets to Keycloak.
 #
 #   scripts/seed-openbao.sh secrets    # write eacp/* into OpenBao (needs OpenBao unsealed)
-#   scripts/seed-openbao.sh keycloak   # set the eacp-gateway and eacp-adapter client secrets
+#   scripts/seed-openbao.sh keycloak   # set the eacp-gateway, eacp-adapter and demo-runner client secrets
 #   scripts/seed-openbao.sh            # both
+#   scripts/seed-openbao.sh runner-secret   # print the demo-runner client secret (demo/scenarios)
 #
 # OpenBao initialises and unseals itself (static seal plus self-initialisation, see the openbao
 # Application in platform/argocd/apps/00-foundation.yaml), so there is no root token. This script
@@ -105,6 +106,8 @@ seed_secrets() {
   seed_clickhouse
   put_once eacp/gateway/oauth-client "$(jq -n --arg s "$(rand)" '{"client-id": "eacp-gateway", "client-secret": $s}')"
   put_once eacp/adapter/oauth-client "$(jq -n --arg s "$(rand)" '{"client-id": "eacp-adapter", "client-secret": $s}')"
+  # The scenario runner's password-grant client (laptop only; demo/scenarios/run.py).
+  put_once eacp/demo/runner-client "$(jq -n --arg s "$(rand)" '{"client-id": "demo-runner", "client-secret": $s}')"
   # Matches the read-only role demo/k8s/customers-db.yaml creates.
   put_once eacp/tools/customer-db \
     '{"DSN":"postgresql://readonly:readonly-demo@customers-rw.demo.svc.cluster.local:5432/customers"}'
@@ -144,7 +147,7 @@ seed_keycloak() {
   at="$(kc_admin_token)"
   [[ -n "$at" && "$at" != null ]] || fail "Keycloak admin login at $KC_URL failed"
   local client secret
-  for path in eacp/gateway/oauth-client eacp/adapter/oauth-client; do
+  for path in eacp/gateway/oauth-client eacp/adapter/oauth-client eacp/demo/runner-client; do
     client="$(field "$path" client-id)"
     secret="$(field "$path" client-secret)"
     [[ -n "$client" && -n "$secret" ]] || fail "$path is missing client-id or client-secret"
@@ -158,7 +161,8 @@ main() {
     secrets) seed_secrets ;;
     keycloak) seed_keycloak ;;
     all) seed_secrets; seed_keycloak ;;
-    *) echo "usage: $0 [secrets|keycloak|all]"; exit 2 ;;
+    runner-secret) login; field eacp/demo/runner-client client-secret ;;
+    *) echo "usage: $0 [secrets|keycloak|all|runner-secret]"; exit 2 ;;
   esac
 }
 

@@ -1,14 +1,19 @@
-# Wave 1: one Application per tool manifest. The git files generator reads each
+# Wave 0: one Application per tool manifest. The git files generator reads each
 # tools/*/manifest.yaml and exposes its fields, so the destination namespace comes from the
 # manifest's team. The chart is rendered with the profile's platform values first and the
-# manifest second, exactly like `make chart-template`.
+# manifest second, exactly like `make chart-template`, plus the values below.
+#
+# Wave 0, beside the gateway chart and the team namespaces, not after the enforcement plane: a
+# tool needs the gateway and Keycloak (wave -1) and its namespace (wave 0, hence the retry), and
+# its hook policy fails closed while the adapter is not up yet. Waiting for every wave-0
+# Application to be healthy would hold tools back on unrelated components (models, telemetry).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: eacp-tools
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
@@ -36,6 +41,13 @@ spec:
             valueFiles:
               - "$repo/platform/values/laptop.yaml"   # profile overlay patches this
               - "$repo/tools/{{ .metadata.name }}/manifest.yaml"
+            valuesObject:
+              platform:
+                # A manifest still on the placeholder digest is not deployed (ticket 05 pins all).
+                skipPlaceholderImages: true
+                # Ticket 03 only: no adapter hook on the per-server routes. Ticket 04 deletes this.
+                guardrails:
+                  omitProcessor: true
         - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
           targetRevision: main
           ref: repo
@@ -46,3 +58,6 @@ spec:
         automated:
           prune: true
           selfHeal: true
+        retry:
+          limit: 10
+          backoff: { duration: 10s, factor: 2, maxDuration: 3m }

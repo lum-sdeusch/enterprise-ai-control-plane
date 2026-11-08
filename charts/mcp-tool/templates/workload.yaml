@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 stdio servers run under kmcp: the MCPServer controller adds the transport-adapter sidecar that
 exposes the process over Streamable HTTP on platform.kmcp.port. http servers run as a plain
@@ -16,7 +17,7 @@ metadata:
     eacp.dev/pins.tools: {{ .Values.spec.pins.tools | quote }}
 spec:
   deployment:
-    image: {{ .Values.spec.image | quote }}
+    image: {{ include "mcp-tool.image" . | quote }}
     cmd: {{ .Values.spec.stdio.cmd | quote }}
     {{- with .Values.spec.stdio.args }}
     args:
@@ -71,7 +72,7 @@ spec:
         {{- include "mcp-tool.podSecurityContext" . | nindent 8 }}
       containers:
         - name: mcp
-          image: {{ .Values.spec.image | quote }}
+          image: {{ include "mcp-tool.image" . | quote }}
           imagePullPolicy: IfNotPresent
           securityContext:
             {{- include "mcp-tool.containerSecurityContext" . | nindent 12 }}
@@ -105,4 +106,5 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+{{- end }}
 {{- end }}

@@ -7,6 +7,17 @@ keycloak:
   serviceName: keycloak-service
   namespace: keycloak
   port: 8080
+  # Public client the gateway hands to MCP clients asking for dynamic client registration.
+  mcpClientId: eacp-mcp-public
+# true drops the aggregate endpoint's adapter hook. Off by default; set only by the eacp-gateway
+# Application for ticket 03, which proves the gateway and identity path before the adapter runs.
+guardrails:
+  omitProcessor: false
+# The LLM path (models, prompt guard, retries, budgets). Off until ticket 07 rewrites the model
+# resources for the agentgateway 1.7 schema; while any resource in this chart fails validation,
+# Argo CD applies none of them.
+llm:
+  enabled: false
 external:
   # Anthropic is the only external provider (ADR 0040). Failover is model-level, then in-house.
   primaryModel: claude-sonnet-4-5

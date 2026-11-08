@@ -23,6 +23,7 @@ platform:
     gatewayClientId: eacp-gateway
     gatewayClientSecretName: eacp-gateway-oauth-client
     gatewayClientSecretPath: eacp/gateway/oauth-client
+    mcpClientId: eacp-mcp-public
   secrets:
     clusterSecretStore: openbao
   kmcp:

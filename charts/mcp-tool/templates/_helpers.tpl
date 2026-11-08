@@ -49,6 +49,26 @@ app.kubernetes.io/name: {{ include "mcp-tool.name" . }}
 {{- printf "%s/mcp/%s" .Values.platform.gateway.publicUrl (include "mcp-tool.name" .) -}}
 {{- end -}}
 
+{{/*
+The image the workload runs: a laptop-only local build (platform.localImages, filled by
+scripts/up.sh from scripts/demo-images.sh) wins over the manifest's image.
+*/}}
+{{- define "mcp-tool.image" -}}
+{{- $local := .Values.platform.localImages | default dict -}}
+{{- index $local (include "mcp-tool.name" .) | default .Values.spec.image -}}
+{{- end -}}
+
+{{/*
+"true" when this server can run. With platform.skipPlaceholderImages (set by the Argo CD
+ApplicationSet) a manifest still carrying the all-zero placeholder digest renders nothing: the
+server is not onboarded until its image is pinned (ticket 05), and a Service with no pods behind
+it would make the fail-closed aggregate endpoint fail every session.
+*/}}
+{{- define "mcp-tool.deployable" -}}
+{{- $placeholder := hasSuffix "@sha256:0000000000000000000000000000000000000000000000000000000000000000" (include "mcp-tool.image" .) -}}
+{{- if not (and .Values.platform.skipPlaceholderImages $placeholder) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "mcp-tool.credentialsSecret" -}}
 {{- printf "%s-credentials" (include "mcp-tool.name" .) -}}
 {{- end -}}

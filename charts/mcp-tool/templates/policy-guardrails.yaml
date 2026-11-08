@@ -1,8 +1,13 @@
+{{- if and (include "mcp-tool.deployable" .) (not .Values.platform.guardrails.omitProcessor) }}
 {{- /*
 Every tool call and every listing goes through the adapter's ExtMCP hook: request and response
 phases of tools/call (arguments in, results out), and the response phase of the three listings
 so the adapter can filter by entitlement and verify the pinned hashes. FailClosed is the only
 acceptable failure mode (ADR 0010).
+
+platform.guardrails.omitProcessor drops this policy. It is off by default; only the tools
+ApplicationSet sets it, for ticket 03, which proves the gateway and identity path before the
+adapter runs. Ticket 04 removes that setting.
 */ -}}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -36,3 +41,4 @@ spec:
 # McpRequest.metadata_context from CEL, e.g. jwt claims and request.headers["traceparent"]. Until
 # confirmed, the adapter reads identity from the forwarded Authorization header, whose signature
 # the gateway has already verified.
+{{- end }}

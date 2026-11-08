@@ -32,6 +32,8 @@ platform:
     gatewayClientId: eacp-gateway
     gatewayClientSecretName: eacp-gateway-oauth-client
     gatewayClientSecretPath: eacp/gateway/oauth-client
+    # Public client the gateway hands to MCP clients that ask for dynamic client registration.
+    mcpClientId: eacp-mcp-public
   secrets:
     clusterSecretStore: openbao
   kmcp:
@@ -44,6 +46,14 @@ platform:
     fqdn: none
   podSecurity:
     runAsUser: 10001
+  guardrails:
+    # true drops the adapter hook policy. Ticket 03 only, set by the tools ApplicationSet.
+    omitProcessor: false
+  # true renders nothing for a manifest whose image still has the all-zero placeholder digest.
+  # The tools ApplicationSet sets it; CI renders every manifest with it off.
+  skipPlaceholderImages: false
+  # Tool name -> image reference built on the laptop (scripts/demo-images.sh, via scripts/up.sh).
+  localImages: {}
 
 apiVersion: eacp.dev/v1alpha1
 kind: ToolManifest

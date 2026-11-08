@@ -1,5 +1,7 @@
 # The single connection string: one virtual MCP server at /mcp that aggregates every onboarded
-# tool server. Servers are discovered by the label the mcp-tool chart puts on their Service.
+# tool server. Servers are discovered by the label the mcp-tool chart puts on their Service (whose
+# port carries appProtocol agentgateway.dev/mcp); without a namespace selector agentgateway 1.7
+# searches only this backend's own namespace, so team namespaces are selected by their label.
 # Tool names are always prefixed with the server name so two servers can never collide.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -15,11 +17,13 @@ spec:
     targets:
       - name: eacp
         selector:
+          namespaces:
+            matchExpressions:
+              - key: eacp.dev/team
+                operator: Exists
           services:
             matchLabels:
               eacp.dev/mcp-server: "true"
-          # TODO(verify): whether the selector spans namespaces by default or needs a namespaces
-          # selector; team servers live in team-* namespaces, not here.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -49,8 +53,9 @@ spec:
           kind: AgentgatewayBackend
 ---
 # Resource-server role for the aggregate endpoint: Keycloak JWTs, MCP audience, protected
-# resource metadata so clients discover Keycloak, and dynamic client registration proxied to it
-# for IDE clients that still use DCR.
+# resource metadata so clients discover Keycloak, and dynamic client registration answered by
+# the gateway with the pre-registered public client (keycloak.mcpClientId) for IDE clients that
+# register dynamically.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -76,16 +81,17 @@ spec:
                 namespace: {{ .Values.keycloak.namespace }}
                 port: {{ .Values.keycloak.port }}
               jwksPath: /realms/eacp/protocol/openid-connect/certs
-          mcp:
-            provider: Keycloak
-            resourceMetadata:
-              resource: {{ printf "%s/mcp" .Values.gateway.publicUrl | quote }}
-              scopesSupported:
-                - openid
-                - profile
-                - email
-              bearerMethodsSupported:
-                - header
+      mcp:
+        provider: Keycloak
+        clientId: {{ .Values.keycloak.mcpClientId | quote }}
+        resourceMetadata:
+          resource: {{ printf "%s/mcp" .Values.gateway.publicUrl | quote }}
+          scopesSupported:
+            - openid
+            - profile
+            - email
+          bearerMethodsSupported:
+            - header
     authorization:
       action: Allow
       policy:
@@ -93,6 +99,8 @@ spec:
           - "has(jwt.sub)"
 ---
 # Every call through the aggregate goes to the adapter, same as the per-server routes.
+# guardrails.omitProcessor drops it (ticket 03 only; see values.yaml).
+{{- if not .Values.guardrails.omitProcessor }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -118,6 +126,7 @@ spec:
               tools/list: Response
               prompts/list: Response
               resources/list: Response
+{{- end }}
 ---
 # The adapter must answer within the policy budget; a slow adapter is a closed gate, not an
 # open one.

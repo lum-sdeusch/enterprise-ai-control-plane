@@ -58,6 +58,14 @@ coredns_rewrites() {
   printf '    added: %s\n' "${missing[@]}"
 }
 
+# Demo servers built on the laptop (scripts/demo-images.sh), as "<tool> <image>@<digest>" lines.
+LOCAL_IMAGES=""
+
+demo_images() {
+  step "demo MCP server images (built locally, loaded into kind)"
+  LOCAL_IMAGES="$(scripts/demo-images.sh)"
+}
+
 install_argocd() {
   step "Argo CD (chart $ARGOCD_CHART_VERSION)"
   helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm \
@@ -101,8 +109,6 @@ record_bringup() {
 retarget_patches() {
   local r="$EACP_REPO" v="$EACP_REVISION"
   cat <<EOF
-    kustomize:
-      patches:
         - target: { kind: Application, labelSelector: eacp.dev/source=repo }
           patch: |
             - { op: replace, path: /spec/source/repoURL, value: "$r" }
@@ -122,21 +128,42 @@ retarget_patches() {
 EOF
 }
 
+# Kustomize patch that hands the locally built demo images to every tool Application.
+local_image_patch() {
+  local map
+  map="$(jq -Rnc '[inputs | select(length > 0) | split(" ") | {(.[0]): .[1]}] | add // {}' <<<"$LOCAL_IMAGES")"
+  cat <<EOF
+        - target: { kind: ApplicationSet, name: eacp-tools }
+          patch: |
+            - { op: add, path: /spec/template/spec/sources/0/helm/valuesObject/platform/localImages, value: $map }
+EOF
+}
+
+# Every patch the root application needs; prints nothing when it needs none.
+root_patches() {
+  local retarget=0
+  [[ "$EACP_REPO" == "$DEFAULT_REPO" && "$EACP_REVISION" == main ]] || retarget=1
+  ((retarget)) || [[ -n "$LOCAL_IMAGES" ]] || return 0
+  printf '    kustomize:\n      patches:\n'
+  ((retarget == 0)) || retarget_patches
+  [[ -z "$LOCAL_IMAGES" ]] || local_image_patch
+}
+
 root_app() {
   local file="platform/argocd/root-${PROFILE}.yaml"
   step "root application ($file, $EACP_REPO @ $EACP_REVISION)"
-  if [[ "$EACP_REPO" == "$DEFAULT_REPO" && "$EACP_REVISION" == main ]]; then
+  local patches
+  patches="$(mktemp)"
+  root_patches >"$patches"
+  if [[ ! -s "$patches" ]]; then
     kubectl apply -f "$file" >/dev/null
   else
-    local patches
-    patches="$(mktemp)"
-    retarget_patches >"$patches"
     sed -e "s#repoURL: $DEFAULT_REPO#repoURL: $EACP_REPO#" \
         -e "s#targetRevision: main#targetRevision: $EACP_REVISION#" \
         -e "\#^    path: platform/argocd/profiles/#r $patches" "$file" |
       kubectl apply -f - >/dev/null
-    rm -f "$patches"
   fi
+  rm -f "$patches"
   echo "    applied"
   record_bringup
 }
@@ -223,6 +250,7 @@ main() {
     need docker; need kind
     kind_cluster
     coredns_rewrites
+    demo_images
   fi
   install_argocd
   if [[ "$PROFILE" == laptop ]]; then openbao_seal_key; fi

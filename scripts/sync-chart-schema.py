@@ -44,7 +44,7 @@ PLATFORM = {
         },
         "keycloak": {
             "type": "object",
-            "required": ["issuer", "serviceName", "namespace", "port", "realm", "mcpAudience", "jwksPath", "tokenPath", "gatewayClientId", "gatewayClientSecretName", "gatewayClientSecretPath"],
+            "required": ["issuer", "serviceName", "namespace", "port", "realm", "mcpAudience", "jwksPath", "tokenPath", "gatewayClientId", "gatewayClientSecretName", "gatewayClientSecretPath", "mcpClientId"],
             "properties": {
                 "issuer": {"type": "string", "pattern": "^https?://"},
                 "serviceName": {"type": "string"},
@@ -57,6 +57,7 @@ PLATFORM = {
                 "gatewayClientId": {"type": "string"},
                 "gatewayClientSecretName": {"type": "string"},
                 "gatewayClientSecretPath": {"type": "string"},
+                "mcpClientId": {"type": "string"},
             },
         },
         "secrets": {
@@ -83,6 +84,15 @@ PLATFORM = {
             "type": "object",
             "required": ["runAsUser"],
             "properties": {"runAsUser": {"type": "integer", "minimum": 1000}},
+        },
+        "guardrails": {
+            "type": "object",
+            "properties": {"omitProcessor": {"type": "boolean"}},
+        },
+        "skipPlaceholderImages": {"type": "boolean"},
+        "localImages": {
+            "type": "object",
+            "additionalProperties": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
         },
     },
 }

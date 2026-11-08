@@ -121,6 +121,14 @@ down: ## Delete the kind cluster
 e2e: ## Run the six demo scenarios against a running cluster (skeleton)
 	PROFILE=$(PROFILE) scripts/e2e.sh
 
+.PHONY: smoke
+smoke: ## Gateway and identity smoke test: tickets via its own route and the aggregate, OAuth audiences
+	PROFILE=$(PROFILE) scripts/e2e.sh --smoke
+
+.PHONY: demo-images
+demo-images: ## Build the demo MCP servers and load them into the kind cluster (rerun make up to deploy)
+	scripts/demo-images.sh
+
 .PHONY: demo
 demo: e2e ## Alias for e2e
 

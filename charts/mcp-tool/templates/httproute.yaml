@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 Per-server route at /mcp/<name>. The protected-resource metadata path is routed too so MCP
 clients can discover the authorization server for exactly this resource (RFC 9728). The
@@ -26,3 +27,4 @@ spec:
         - name: {{ include "mcp-tool.name" . }}
           group: agentgateway.dev
           kind: AgentgatewayBackend
+{{- end }}

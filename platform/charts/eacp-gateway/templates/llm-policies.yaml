@@ -1,10 +1,12 @@
 # Policies on the LLM path: identity, prompt guard to the adapter, token budgets.
 
-# Identity on LLM routes. Tokens issued by the eacp realm carry both gateway audiences (see the
-# client scopes in platform/keycloak/realm-import.yaml), so one gateway-level provider serves
-# MCP and LLM traffic. Per-route MCP policies add protected-resource metadata on top.
-# TODO(verify): precedence between a Gateway-level jwtAuthentication policy and the per-route
-# ones the mcp-tool chart renders; if they conflict, move this to the models' route.
+# Identity for every route on the gateway that has no route-level JWT policy of its own: the LLM
+# path (both audiences accepted). Verified on agentgateway 1.7 (ticket 03): traffic policies
+# merge per field, and the more precise attachment wins, so a route-level jwtAuthentication
+# (the MCP routes: /mcp and every /mcp/<name>) replaces this one entirely rather than adding to
+# it. MCP routes therefore accept only the eacp-mcp audience, and a token minted for the LLM
+# audience alone is rejected there. A route that must not require a bearer token (the approval
+# page, ticket 09) needs its own jwtAuthentication with mode Optional.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -36,6 +38,7 @@ spec:
 # analysis it already did for the routing callout (keyed by content hash) so the second look is
 # cheap. Request phase may Pass, Mask (PII bound for an external model) or Reject (secrets,
 # injection, class not allowed for the label). Response phase may Pass or Mask.
+{{- if .Values.llm.enabled }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -43,8 +46,9 @@ metadata:
   namespace: agentgateway-system
 spec:
   targetRefs:
-    # TODO(verify): promptGuard target kind when models are AgentgatewayModel resources rather
-    # than an AgentgatewayBackend behind an HTTPRoute. Documented examples target an HTTPRoute.
+    # Verified (1.7): an AgentgatewayPolicy cannot target AgentgatewayModel (allowed: Gateway,
+    # HTTPRoute, GRPCRoute, ListenerSet, Service, AgentgatewayBackend, InferencePool). The prompt
+    # guard moves to spec.policies.promptGuard on each concrete model in ticket 07.
     - group: agentgateway.dev
       kind: AgentgatewayModel
       name: eacp-auto
@@ -82,12 +86,15 @@ spec:
                 x-eacp-conversation-id: 'has(request.headers["x-eacp-conversation-id"]) ? request.headers["x-eacp-conversation-id"] : ""'
                 x-eacp-model: llm.requestModel
                 traceparent: 'has(request.headers["traceparent"]) ? request.headers["traceparent"] : ""'
+{{- end }}
 ---
 # Token budgets keyed by identity claims. The gateway's units are seconds, minutes and hours, so
 # the per-day figures from teams/*/manifest.yaml are divided by 24. Exhaustion returns 429 with
-# a clear message; that is demo scenario 6.
+# a clear message; that is demo scenario 6. Rendered with llm.enabled: on the Gateway it would
+# also count MCP requests.
 # TODO(generate): emit this from teams/*/manifest.yaml in scripts/compile-manifests.py once the
 # per-key semantics are confirmed (one entry applies the same budget to every value of the key).
+{{- if .Values.llm.enabled }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -110,3 +117,4 @@ spec:
         - tokens: 83334
           unit: Hours
           key: jwt.team
+{{- end }}

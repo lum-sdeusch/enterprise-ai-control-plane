@@ -13,7 +13,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 export EACP_GATEWAY_URL="${EACP_GATEWAY_URL:-http://gw.127.0.0.1.sslip.io:8080}"
-export EACP_KEYCLOAK_TOKEN_URL="${EACP_KEYCLOAK_TOKEN_URL:-http://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token}"
+if [[ "$PROFILE" == laptop ]]; then export EACP_CA_FILE="${EACP_CA_FILE:-$ROOT/.eacp/ca.pem}"; fi
+export EACP_KEYCLOAK_TOKEN_URL="${EACP_KEYCLOAK_TOKEN_URL:-https://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token}"
 
 if ! curl -fsS "$EACP_GATEWAY_URL/.well-known/oauth-protected-resource/mcp" >/dev/null; then
   echo "e2e: gateway not reachable at $EACP_GATEWAY_URL; run 'make up' first" >&2

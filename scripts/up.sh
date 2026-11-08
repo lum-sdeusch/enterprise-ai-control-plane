@@ -20,6 +20,9 @@ EACP_REPO="${EACP_REPO:-$DEFAULT_REPO}"
 EACP_REVISION="${EACP_REVISION:-main}"
 ARGOCD_CHART_VERSION=10.15.0   # Argo CD v3.6.1
 WAIT_TIMEOUT="${EACP_WAIT_TIMEOUT:-2400}"   # seconds for the platform to settle
+# The laptop CA that signs Keycloak's certificate (platform/keycloak/tls.yaml), exported here for
+# curl, the scenario runner and Claude Code (NODE_EXTRA_CA_CERTS).
+export EACP_CA_FILE="${EACP_CA_FILE:-$ROOT/.eacp/ca.pem}"
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1 (see the quick start in README.md)"; exit 1; }; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -179,6 +182,14 @@ wait_for() { # wait_for DESCRIPTION COMMAND...: retry COMMAND every 5s until it 
 
 openbao_ready() { kubectl wait --for=condition=Ready pod/openbao-0 -n openbao --timeout=5s; }
 realm_imported() { kubectl wait --for=condition=Done keycloakrealmimport/eacp -n keycloak --timeout=5s; }
+ca_issued() { kubectl get secret eacp-local-ca -n keycloak -o jsonpath='{.data.ca\.crt}' | grep -q .; }
+
+export_ca() {
+  wait_for "the laptop CA (cert-manager)" ca_issued
+  mkdir -p "$(dirname "$EACP_CA_FILE")"
+  kubectl get secret eacp-local-ca -n keycloak -o jsonpath='{.data.ca\.crt}' | base64 -d >"$EACP_CA_FILE"
+  echo "    laptop CA written to $EACP_CA_FILE"
+}
 
 seed() {
   [[ "$PROFILE" == laptop ]] || return 0
@@ -187,7 +198,8 @@ seed() {
   scripts/seed-openbao.sh secrets
   step "Keycloak: realm import and client secrets"
   wait_for "the eacp realm import" realm_imported
-  wait_for "Keycloak on host port 8081" curl -sf http://127.0.0.1:8081/realms/eacp
+  export_ca
+  wait_for "Keycloak on host port 8081" curl -sf --cacert "$EACP_CA_FILE" https://auth.127.0.0.1.sslip.io:8081/realms/eacp
   scripts/seed-openbao.sh keycloak
 }
 
@@ -233,7 +245,8 @@ summary() {
   cat <<EOF
 
 Gateway     http://gw.127.0.0.1.sslip.io:8080      (MCP at /mcp, LLM at /v1, approvals at /approvals)
-Keycloak    http://auth.127.0.0.1.sslip.io:8081   (realm eacp; demo users alice, bob, carol with password changeme-<name>)
+Keycloak    https://auth.127.0.0.1.sslip.io:8081  (realm eacp; demo users alice, bob, carol with password changeme-<name>)
+            signed by the laptop CA in $EACP_CA_FILE; for Claude Code: export NODE_EXTRA_CA_CERTS=$EACP_CA_FILE
 LibreChat   http://chat.127.0.0.1.sslip.io:3080
 Argo CD     http://127.0.0.1:8082                 (user admin, password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
 Langfuse    http://127.0.0.1:8083

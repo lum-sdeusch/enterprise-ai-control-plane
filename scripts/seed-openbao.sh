@@ -19,7 +19,9 @@ set -euo pipefail
 NS=openbao
 POD=openbao-0
 MOUNT=secret
-KC_URL="${EACP_KEYCLOAK_URL:-http://127.0.0.1:8081}"
+KC_URL="${EACP_KEYCLOAK_URL:-https://auth.127.0.0.1.sslip.io:8081}"
+# Keycloak's certificate is signed by the laptop CA that scripts/up.sh exports.
+KC_CA="${EACP_CA_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.eacp/ca.pem}"
 KC_REALM=eacp
 TOKEN=""
 
@@ -120,7 +122,7 @@ kc_admin_token() {
   local user pass
   user="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' | base64 -d)"
   pass="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)"
-  printf '%s' "$pass" | curl -sf "$KC_URL/realms/master/protocol/openid-connect/token" \
+  printf '%s' "$pass" | curl -sf --cacert "$KC_CA" "$KC_URL/realms/master/protocol/openid-connect/token" \
     -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$user" \
     --data-urlencode "password@-" | jq -r .access_token
 }
@@ -130,13 +132,13 @@ kc_set_client_secret() { # kc_set_client_secret ADMIN_TOKEN CLIENT_ID SECRET
   [[ -n "$2" && -n "$3" ]] || fail "kc_set_client_secret needs a client id and a secret"
   auth="Authorization: Bearer $1"
   # clientId is a search filter, not an exact match: keep only the client whose id is exactly $2.
-  id="$(curl -sfG -H @<(printf '%s' "$auth") --data-urlencode "clientId=$2" \
+  id="$(curl -sfG --cacert "$KC_CA" -H @<(printf '%s' "$auth") --data-urlencode "clientId=$2" \
     "$KC_URL/admin/realms/$KC_REALM/clients" |
     jq -r --arg c "$2" '[.[] | select(.clientId == $c)] | if length == 1 then .[0].id else empty end')"
   [[ -n "$id" ]] || fail "client $2 not found (exactly once) in realm $KC_REALM"
-  curl -sf -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients/$id" |
+  curl -sf --cacert "$KC_CA" -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients/$id" |
     jq --arg s "$3" '.secret = $s' |
-    curl -sf -X PUT -H @<(printf '%s' "$auth") -H 'Content-Type: application/json' \
+    curl -sf --cacert "$KC_CA" -X PUT -H @<(printf '%s' "$auth") -H 'Content-Type: application/json' \
       --data-binary @- "$KC_URL/admin/realms/$KC_REALM/clients/$id"
   log "set Keycloak client secret for $2"
 }

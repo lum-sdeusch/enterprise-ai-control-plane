@@ -28,6 +28,16 @@ patches:
       - op: replace
         path: /spec/http/httpEnabled
         value: false
-      - op: add
+      - op: replace
         path: /spec/http/tlsSecret
         value: keycloak-tls
+  # Real host name on the certificate; ticket 15 replaces the laptop CA issuer with ACME.
+  - target:
+      kind: Certificate
+      name: keycloak-tls
+    patch: |
+      - op: replace
+        path: /spec/dnsNames
+        value: [auth.eacp.example.com]
+      - op: remove
+        path: /spec/ipAddresses

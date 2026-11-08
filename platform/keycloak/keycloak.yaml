@@ -30,14 +30,19 @@ spec:
       name: keycloak-db-app
       key: password
   http:
+    # https on 8443 with the certificate from tls.yaml; plain http on 8080 stays for in-cluster
+    # back-channel calls (the gateway's JWKS fetch, token exchange) and never leaves the cluster.
     httpEnabled: true
     httpPort: 8080
+    httpsPort: 8443
+    tlsSecret: keycloak-tls
   hostname:
-    # laptop profile: the kind port mapping publishes Keycloak on host port 8081 (NodePort 30081,
-    # nodeport.yaml), and CoreDNS resolves the same name inside the cluster (scripts/up.sh), so
-    # the issuer is identical for browsers and pods. The cloud-gpu overlay patches this to
-    # https://auth.eacp.example.com.
-    hostname: http://auth.127.0.0.1.sslip.io:8081
+    # laptop profile: the kind port mapping publishes Keycloak's https port on host port 8081
+    # (NodePort 30081, nodeport.yaml), and CoreDNS resolves the same name inside the cluster
+    # (scripts/up.sh), so the issuer is identical for browsers and pods. https because OAuth
+    # clients refuse plain-http token endpoints (tls.yaml). The cloud-gpu overlay patches this
+    # to https://auth.eacp.example.com.
+    hostname: https://auth.127.0.0.1.sslip.io:8081
     strict: false
   proxy:
     headers: xforwarded

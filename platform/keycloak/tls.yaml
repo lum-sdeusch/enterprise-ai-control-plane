@@ -1,0 +1,66 @@
+# TLS for Keycloak. OAuth 2.1 and MCP clients refuse to send credentials to a plain-http token
+# endpoint unless the host is literally localhost (Claude Code enforces this), so the issuer is
+# https even on the laptop.
+#
+# Laptop: a self-signed CA made by cert-manager signs keycloak-tls. scripts/up.sh exports the CA
+# certificate to .eacp/ca.pem; clients trust it explicitly (NODE_EXTRA_CA_CERTS for Claude Code,
+# --cacert for curl, EACP_CA_FILE for the scenario runner). The CA stays in this namespace; a
+# component elsewhere that calls Keycloak over https copies ca.crt from Secret eacp-local-ca.
+# The cloud-gpu overlay replaces the names on keycloak-tls (ticket 15 swaps the issuer for ACME).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: eacp-selfsigned
+  namespace: keycloak
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: eacp-local-ca
+  namespace: keycloak
+spec:
+  isCA: true
+  commonName: eacp laptop CA
+  secretName: eacp-local-ca
+  duration: 87600h   # ten years: a laptop CA nobody should have to rotate mid-demo
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: eacp-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: eacp-local-ca
+  namespace: keycloak
+spec:
+  ca:
+    secretName: eacp-local-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls
+  namespace: keycloak
+spec:
+  secretName: keycloak-tls
+  duration: 8760h
+  dnsNames:
+    - auth.127.0.0.1.sslip.io
+    - localhost
+    - keycloak-nodeport.keycloak.svc
+    - keycloak-nodeport.keycloak.svc.cluster.local
+    - keycloak-service.keycloak.svc
+    - keycloak-service.keycloak.svc.cluster.local
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: eacp-local-ca
+    kind: Issuer

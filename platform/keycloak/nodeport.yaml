@@ -1,7 +1,7 @@
 # Laptop access to Keycloak. The operator owns keycloak-service and resets its type, so the
 # NodePort is a separate Service over the same pods. Port 8081 matches the hostname in
 # keycloak.yaml: scripts/up.sh rewrites auth.127.0.0.1.sslip.io to this Service in CoreDNS, so
-# http://auth.127.0.0.1.sslip.io:8081 works from pods as well as from the laptop.
+# https://auth.127.0.0.1.sslip.io:8081 works from pods as well as from the laptop.
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,7 +15,7 @@ spec:
     app: keycloak
     app.kubernetes.io/instance: keycloak
   ports:
-    - name: http
+    - name: https
       port: 8081
-      targetPort: 8080
+      targetPort: 8443
       nodePort: 30081

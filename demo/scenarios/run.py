@@ -28,9 +28,12 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 GATEWAY = os.environ.get("EACP_GATEWAY_URL", "http://gw.127.0.0.1.sslip.io:8080").rstrip("/")
-TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "http://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
+TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "https://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
 RUNNER_CLIENT_ID = os.environ.get("EACP_RUNNER_CLIENT_ID", "demo-runner")
 RUNNER_CLIENT_SECRET = os.environ.get("EACP_RUNNER_CLIENT_SECRET", "")
+# Keycloak's certificate is signed by the laptop CA (scripts/up.sh writes .eacp/ca.pem); unset
+# means the system trust store (cloud-gpu).
+CA_FILE: str | bool = os.environ.get("EACP_CA_FILE") or True
 
 
 @dataclass
@@ -62,6 +65,7 @@ def user_token(username: str, password: str, audiences: tuple[str, ...] = ("eacp
         TOKEN_URL,
         data={"grant_type": "password", "client_id": RUNNER_CLIENT_ID, "client_secret": RUNNER_CLIENT_SECRET, "username": username, "password": password, "scope": scope},
         timeout=10,
+        verify=CA_FILE,
     )
     resp.raise_for_status()
     return resp.json()["access_token"]

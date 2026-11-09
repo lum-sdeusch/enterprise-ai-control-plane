@@ -176,8 +176,22 @@ wait_for() { # wait_for DESCRIPTION COMMAND...: retry COMMAND every 5s until it 
   shift
   until "$@" >/dev/null 2>&1; do
     ((SECONDS < deadline)) || { echo "    timed out waiting for $what"; return 1; }
+    resync_root
     sleep 5
   done
+}
+
+# The controller stops a sync after 15 minutes (it happens when the laptop sleeps mid bring-up).
+# Argo CD neither retries that sync nor auto-syncs the same commit again, so the later waves would
+# stay unapplied; while up.sh waits, it starts the root sync again.
+resync_root() {
+  local message
+  message="$(kubectl get application eacp-root -n argocd \
+    -o jsonpath='{.status.operationState.phase} {.status.operationState.message}' 2>/dev/null)" || return 0
+  [[ "$message" == "Failed Operation terminated, triggered by controller sync timeout" ]] || return 0
+  kubectl patch application eacp-root -n argocd --type merge -p \
+    '{"operation":{"initiatedBy":{"username":"make-up"},"sync":{"prune":true,"syncOptions":["CreateNamespace=true"]}}}' \
+    >/dev/null && echo "    restarted the root sync after the controller's sync timeout"
 }
 
 openbao_ready() { kubectl wait --for=condition=Ready pod/openbao-0 -n openbao --timeout=5s; }

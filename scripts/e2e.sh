@@ -21,7 +21,7 @@ if ! curl -fsS "$EACP_GATEWAY_URL/.well-known/oauth-protected-resource/mcp" >/de
   exit 1
 fi
 
-python3 -c "import mcp, httpx" 2>/dev/null || pip install -q "mcp>=1.19" httpx
+python3 -c "import httpx; from mcp.client.streamable_http import streamablehttp_client" 2>/dev/null || pip install -q "mcp>=1.19,<2" httpx
 # The demo-runner client's secret lives in OpenBao (scripts/seed-openbao.sh).
 EACP_RUNNER_CLIENT_SECRET="${EACP_RUNNER_CLIENT_SECRET:-$(scripts/seed-openbao.sh runner-secret)}"
 export EACP_RUNNER_CLIENT_SECRET

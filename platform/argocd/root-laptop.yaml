@@ -20,9 +20,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-    # A first bring-up can outlast the controller's sync timeout (900 s) while the foundation
-    # waves pull images; the terminated sync counts as failed, and without a retry Argo CD never
-    # syncs the same commit again, so waves 0 and 1 would stay unapplied.
+    # A failed sync is not auto-synced again on the same commit, so it is retried here. A sync the
+    # controller stops at its 15-minute timeout is not retried at all; scripts/up.sh restarts it.
     retry:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 5m }

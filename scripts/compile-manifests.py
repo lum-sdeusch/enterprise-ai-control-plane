@@ -186,6 +186,10 @@ def _client_scopes() -> list[dict]:
 
 
 def _platform_clients() -> list[dict]:
+    return _resource_and_ui_clients() + _service_clients()
+
+
+def _resource_and_ui_clients() -> list[dict]:
     return [
         # Resource audiences. bearer-only clients exist so audience mappers and token exchange
         # have a client to point at; nobody logs in to them.
@@ -232,6 +236,11 @@ def _platform_clients() -> list[dict]:
             "defaultClientScopes": ["basic", "profile", "email", "eacp"],
             "attributes": {"eacp.kind": "ui"},
         },
+    ]
+
+
+def _service_clients() -> list[dict]:
+    return [
         {
             # The gateway's own identity for RFC 8693 token exchange toward tool backends.
             "clientId": "eacp-gateway",

@@ -36,9 +36,10 @@ spec:
               tools/list: Response
               prompts/list: Response
               resources/list: Response
-# TODO(verify): the policy field that selects which request headers reach the hook
-# (McpRequest.headers is "after gateway-side allow/deny filtering") and the field that fills
-# McpRequest.metadata_context from CEL, e.g. jwt claims and request.headers["traceparent"]. Until
-# confirmed, the adapter reads identity from the forwarded Authorization header, whose signature
-# the gateway has already verified.
+# Checked against the agentgateway 1.7 CRD (ticket 03): remote.allowedRequestHeaders and
+# remote.disallowedRequestHeaders select the headers in McpRequest.headers (empty: all headers
+# and pseudo-headers), and remote.metadata is a map of CEL expressions surfaced as
+# McpRequest.metadata_context (e.g. jwt claims, request.headers["traceparent"]). Ticket 04 sets
+# them and proves what reaches the adapter; until then the adapter reads identity from the
+# forwarded Authorization header, whose signature the gateway has already verified.
 {{- end }}

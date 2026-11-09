@@ -26,7 +26,7 @@ spec:
     port: {{ .Values.platform.kmcp.port }}
     replicas: {{ .Values.spec.replicas | default 1 }}
     {{- with .Values.spec.env }}
-    # TODO(verify): kmcp deployment.env shape (map or list) against the kagent.dev/v1alpha1 API reference.
+    # kmcp v0.4.0: deployment.env is map[string]string (kubectl explain mcpservers.spec.deployment.env).
     env:
       {{- range . }}
       {{ .name }}: {{ .value | quote }}

@@ -26,8 +26,11 @@ agentgateway fills both boxes. Agent Router is documented as the drop-in for the
 
 - Classification routing uses the virtual model callout, which is native to agentgateway.
 
-## To verify at build time
+## Verified at build time
 
 - AgentgatewayModel provider and model fields for Anthropic.
+  **Answer (ticket 03, agentgateway 1.7.0 CRD schema and server-side dry run):** provider Anthropic exists; there is no model field (the API server rejects it). The name clients request is match.model, which defaults to metadata.name. Ticket 07 sets the upstream model id and runs the first request.
 - Whether a callout may target a virtual model; otherwise the adapter returns concrete model names.
+  **Answer (ticket 03, agentgateway 1.7.0 CRD schema):** It may not. callout.transformation.model must select a concrete model, matched against match.model of models on the same listener, so the adapter returns concrete names and the external failover chain has to be arranged without a virtual model behind the callout (ticket 07). callout.headers accepts the :path pseudo-header for the adapter's /v1/route.
 - promptGuard target kind when models are AgentgatewayModel resources.
+  **Answer (ticket 03, agentgateway 1.7.0 server-side dry run):** An AgentgatewayPolicy cannot target AgentgatewayModel (allowed: Gateway, HTTPRoute, GRPCRoute, ListenerSet, Service, AgentgatewayBackend, InferencePool). The prompt guard goes in spec.policies.promptGuard on each concrete model; virtual models cannot carry policies. Until ticket 07 the LLM resources are behind llm.enabled in the eacp-gateway chart.

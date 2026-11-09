@@ -333,8 +333,22 @@
     - The adapter implements agentgateway's ExtMCP protocol; the proto is vendored under adapter/proto.
     - ToolHive is documented as the alternative for teams that want argument-level Cedar at the edge.
   verify:
-    - "The label kmcp puts on pods it creates, so the chart's Service selects them (charts/mcp-tool values: platform.kmcp.podLabelKey)."
-    - Whether the virtual MCP backend's label selector spans namespaces.
+    - item: "The label kmcp puts on pods it creates, so the chart's Service selects them (charts/mcp-tool values: platform.kmcp.podLabelKey)."
+      verified: ticket 03, kmcp v0.4.0 source
+      answer: >-
+        app.kubernetes.io/name and app.kubernetes.io/instance, both set to the MCPServer name
+        (pkg/controller/transportadapter/transportadapter_translator.go), so the default
+        podLabelKey app.kubernetes.io/name is right. Read from the source, not yet exercised on a
+        cluster; the first stdio server runs in ticket 06.
+    - item: Whether the virtual MCP backend's label selector spans namespaces.
+      verified: ticket 03, agentgateway 1.7.0 on kind
+      answer: >-
+        No. Without selector.namespaces only the backend's own namespace is searched; the
+        aggregate in platform/charts/eacp-gateway selects namespaces carrying eacp.dev/team.
+        Selected Services need appProtocol agentgateway.dev/mcp on the port. The target (and so
+        the tool prefix) is named "<service>-<port name>" unless the Service carries
+        agentgateway.dev/mcp-target-name, and the path comes from agentgateway.dev/mcp-path; the
+        mcp-tool chart sets both, giving tickets_list_tickets on /mcp.
 
 - id: 18
   title: One gateway product for both the LLM and MCP roles
@@ -355,9 +369,27 @@
   consequences:
     - Classification routing uses the virtual model callout, which is native to agentgateway.
   verify:
-    - AgentgatewayModel provider and model fields for Anthropic.
-    - Whether a callout may target a virtual model; otherwise the adapter returns concrete model names.
-    - promptGuard target kind when models are AgentgatewayModel resources.
+    - item: AgentgatewayModel provider and model fields for Anthropic.
+      verified: ticket 03, agentgateway 1.7.0 CRD schema and server-side dry run
+      answer: >-
+        provider Anthropic exists; there is no model field (the API server rejects it). The name
+        clients request is match.model, which defaults to metadata.name. Ticket 07 sets the
+        upstream model id and runs the first request.
+    - item: Whether a callout may target a virtual model; otherwise the adapter returns concrete model names.
+      verified: ticket 03, agentgateway 1.7.0 CRD schema
+      answer: >-
+        It may not. callout.transformation.model must select a concrete model, matched against
+        match.model of models on the same listener, so the adapter returns concrete names and the
+        external failover chain has to be arranged without a virtual model behind the callout
+        (ticket 07). callout.headers accepts the :path pseudo-header for the adapter's /v1/route.
+    - item: promptGuard target kind when models are AgentgatewayModel resources.
+      verified: ticket 03, agentgateway 1.7.0 server-side dry run
+      answer: >-
+        An AgentgatewayPolicy cannot target AgentgatewayModel (allowed: Gateway, HTTPRoute,
+        GRPCRoute, ListenerSet, Service, AgentgatewayBackend, InferencePool). The prompt guard
+        goes in spec.policies.promptGuard on each concrete model; virtual models cannot carry
+        policies. Until ticket 07 the LLM resources are behind llm.enabled in the eacp-gateway
+        chart.
 
 - id: 19
   title: The adapter is the single enforcement orchestrator, with OPA as its sidecar

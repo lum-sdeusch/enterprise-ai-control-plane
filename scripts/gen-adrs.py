@@ -55,11 +55,24 @@ def render(d: dict) -> str:
             lines.append(f"- {text(c)}")
         lines.append("")
     if d.get("verify"):
-        lines += ["## To verify at build time", ""]
-        for v in d["verify"]:
-            lines.append(f"- {text(v)}")
-        lines.append("")
+        lines += verify_section(d["verify"])
     return "\n".join(lines)
+
+
+def verify_section(items: list) -> list[str]:
+    """Open questions render as bullets. An answered one is a mapping with `item`, `answer` and
+    `verified` (where and how it was checked); once every item is answered the heading says so."""
+    answered = [v for v in items if isinstance(v, dict) and "answer" in v]
+    title = "Verified at build time" if len(answered) == len(items) else "To verify at build time"
+    lines = [f"## {title}", ""]
+    for v in items:
+        if v in answered:
+            lines.append(f"- {str(v['item']).strip()}")
+            lines.append(f"  **Answer ({str(v['verified']).strip()}):** {str(v['answer']).strip()}")
+        else:
+            lines.append(f"- {text(v)}")
+    lines.append("")
+    return lines
 
 
 def main() -> int:

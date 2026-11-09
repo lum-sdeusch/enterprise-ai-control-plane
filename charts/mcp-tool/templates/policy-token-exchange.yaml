@@ -47,8 +47,11 @@ spec:
         clientAuth:
           clientId: {{ .Values.platform.keycloak.gatewayClientId | quote }}
           method: ClientSecretBasic
+          # agentgateway 1.7 reads key clientSecret unless told otherwise; the secrets-manager
+          # entry (scripts/seed-openbao.sh) names it client-secret.
           secretRef:
             name: {{ .Values.platform.keycloak.gatewayClientSecretName }}
+            key: client-secret
 ---
 # The gateway's own client secret, delivered into this namespace from the secrets manager.
 apiVersion: external-secrets.io/v1
@@ -69,6 +72,5 @@ spec:
   dataFrom:
     - extract:
         key: {{ .Values.platform.keycloak.gatewayClientSecretPath | quote }}
-# TODO(verify): the Secret key name agentgateway reads the client secret from.
 {{- end }}
 {{- end }}

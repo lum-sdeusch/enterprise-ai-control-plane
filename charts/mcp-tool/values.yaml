@@ -37,7 +37,7 @@ platform:
   kmcp:
     port: 3000
     path: /mcp
-    # TODO(verify): the label kmcp puts on the pods it creates, so the chart's Service can select them.
+    # kmcp v0.4.0 labels the pods it creates app.kubernetes.io/name=<MCPServer name> (ADR 0017).
     podLabelKey: app.kubernetes.io/name
   networkPolicy:
     # none | cilium. With cilium, egress fqdn rules render as CiliumNetworkPolicy toFQDNs.

@@ -287,9 +287,10 @@ exchange so the downstream system sees the real user.
   commit and appears in every audit record; pushed to an OCI registry; OPA pulls.
 - Agent manifests in `agents/<name>/manifest.yaml`: owner, team, risk tier, allowed tool groups,
   allowed model classes, schedule. Keycloak clients derive from them.
-- GitHub Actions. Per pull request: schema validation, policy unit tests, image build with
-  keyless cosign signing, Trivy, end-to-end on kind running the five threat scenarios. Nightly:
-  promptfoo red-team against the LLM route and the MCP endpoint; Inspect optional.
+- GitHub Actions. Per pull request: schema validation, policy unit tests, image build and
+  Trivy scan, end-to-end on kind running the five threat scenarios. Nightly: promptfoo red-team
+  against the LLM route and the MCP endpoint; Inspect optional. The workflow publishes and signs
+  nothing; images are published and signed outside GitHub Actions (ADR 0046, amended 2026-11-11).
 - Argo CD syncs the platform and, via an ApplicationSet directory generator, one application per
   tool directory.
 

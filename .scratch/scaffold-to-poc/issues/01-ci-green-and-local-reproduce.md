@@ -23,3 +23,6 @@ clean container with only Go 1.26, Python 3.12 and git; the quick start gained a
 tool gate has only run its early exit (no manifest changes); ticket 05 exercises it for real,
 including whether mcp-scanner exits non-zero on findings.
 Keyless cosign signing runs only on pushes to `main`, so it is first exercised by the merge of PR 1.
+
+**Update 2026-11-11:** the workflow no longer pushes or signs images; it builds and scans them on
+the runner only. Signing moves to a key-based path outside GitHub Actions (tickets 04 and 14).

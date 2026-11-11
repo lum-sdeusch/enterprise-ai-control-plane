@@ -18,7 +18,7 @@ langfuse:
     - name: AUTH_KEYCLOAK_CLIENT_SECRET
       valueFrom: { secretKeyRef: { name: langfuse-secrets, key: keycloak-client-secret } }
     - name: AUTH_KEYCLOAK_ISSUER
-      value: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+      value: http://auth.127.0.0.1.sslip.io:8081/realms/eacp
     - name: AUTH_DISABLE_USERNAME_PASSWORD
       value: "true"
     - name: LANGFUSE_INIT_ORG_ID

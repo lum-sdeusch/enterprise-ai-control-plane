@@ -21,7 +21,7 @@ platform:
     grpcPort: 4445
     httpPort: 8080
   keycloak:
-    issuer: http://auth.127.0.0.1.sslip.io:8080/realms/eacp
+    issuer: http://auth.127.0.0.1.sslip.io:8081/realms/eacp
     serviceName: keycloak-service
     namespace: keycloak
     port: 8080

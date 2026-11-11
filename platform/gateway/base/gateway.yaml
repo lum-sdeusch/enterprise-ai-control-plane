@@ -1,4 +1,6 @@
-# The one gateway. LLM traffic and MCP traffic share it; AgentgatewayModel resources attach to
+# The one gateway, its own Application in sync wave -1 (with the agentgateway controller) so it
+# exists before the eacp-gateway chart attaches models, routes and policies to it. LLM traffic
+# and MCP traffic share it; AgentgatewayModel resources attach to
 # the http listener directly, HTTPRoutes attach from the platform and team namespaces.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -18,8 +20,9 @@ spec:
           from: Selector
           selector:
             matchLabels:
-              # Set on agentgateway-system and on every team-* namespace (generated from
-              # teams/*/manifest.yaml by scripts/compile-manifests.py).
+              # Set on agentgateway-system by the gateway Application's managedNamespaceMetadata
+              # (platform/argocd/apps/10-platform.yaml) and on every team-* namespace (generated
+              # from teams/*/manifest.yaml by scripts/compile-manifests.py).
               eacp.dev/routes: "true"
 # TODO(profile cloud-gpu): add an https listener with a cert-manager issued certificate and
 # redirect http to it; the laptop profile stays on plain http behind the kind port mapping.

@@ -25,7 +25,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 GATEWAY = os.environ.get("EACP_GATEWAY_URL", "http://gw.127.0.0.1.sslip.io:8080").rstrip("/")
-TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "http://auth.127.0.0.1.sslip.io:8080/realms/eacp/protocol/openid-connect/token")
+TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "http://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
 RUNNER_CLIENT_ID = os.environ.get("EACP_RUNNER_CLIENT_ID", "demo-runner")
 RUNNER_CLIENT_SECRET = os.environ.get("EACP_RUNNER_CLIENT_SECRET", "")
 

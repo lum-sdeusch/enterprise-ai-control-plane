@@ -7,7 +7,10 @@ listing, or which model answered. Scenarios print PASS/FAIL and the script exits
 any failure, so CI cannot be green by accident.
 
 Requires: a reachable gateway (EACP_GATEWAY_URL), Keycloak (EACP_KEYCLOAK_TOKEN_URL) with the
-demo users from the generated realm, and the `mcp` and `httpx` packages.
+demo users from the generated realm, the demo-runner client secret (EACP_RUNNER_CLIENT_SECRET,
+from `scripts/seed-openbao.sh runner-secret`), and the `mcp` and `httpx` packages.
+
+`run.py --smoke` runs only the gateway and identity checks of ticket 03 (demo/scenarios/smoke.py).
 TODO(verify): the `mcp` SDK v2 client API for spec 2026-07-28 (handshake-free sessions).
 """
 
@@ -25,9 +28,12 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 GATEWAY = os.environ.get("EACP_GATEWAY_URL", "http://gw.127.0.0.1.sslip.io:8080").rstrip("/")
-TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "http://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
+TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "https://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
 RUNNER_CLIENT_ID = os.environ.get("EACP_RUNNER_CLIENT_ID", "demo-runner")
 RUNNER_CLIENT_SECRET = os.environ.get("EACP_RUNNER_CLIENT_SECRET", "")
+# Keycloak's certificate is signed by the laptop CA (scripts/up.sh writes .eacp/ca.pem); unset
+# means the system trust store (cloud-gpu).
+CA_FILE: str | bool = os.environ.get("EACP_CA_FILE") or True
 
 
 @dataclass
@@ -50,23 +56,30 @@ class Report:
         return any(not r.ok for r in self.results)
 
 
-def user_token(username: str, password: str, audience: str = "eacp-mcp") -> str:
-    """Resource-owner password grant on the demo-runner client (laptop profile only)."""
+def user_token(username: str, password: str, audiences: tuple[str, ...] = ("eacp-mcp", "eacp-llm")) -> str:
+    """Resource-owner password grant on the demo-runner client (laptop profile only). The
+    gateway audiences are optional scopes on that client, so the token carries exactly the
+    audiences asked for."""
+    scope = " ".join(["openid", "eacp", *(f"{a}-audience" for a in audiences)])
     resp = httpx.post(
         TOKEN_URL,
-        data={"grant_type": "password", "client_id": RUNNER_CLIENT_ID, "client_secret": RUNNER_CLIENT_SECRET, "username": username, "password": password, "scope": "openid eacp"},
+        data={"grant_type": "password", "client_id": RUNNER_CLIENT_ID, "client_secret": RUNNER_CLIENT_SECRET, "username": username, "password": password, "scope": scope},
         timeout=10,
+        verify=CA_FILE,
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
 
 
 class Session:
-    def __init__(self, token: str, conversation_id: str | None = None):
+    """One caller on one MCP endpoint: the aggregate /mcp by default, or a per-server /mcp/<name>."""
+
+    def __init__(self, token: str, conversation_id: str | None = None, path: str = "/mcp"):
         self.headers = {"Authorization": f"Bearer {token}", "x-eacp-conversation-id": conversation_id or f"demo:{uuid.uuid4()}"}
+        self.url = f"{GATEWAY}{path}"
 
     async def tools(self) -> list[str]:
-        async with streamablehttp_client(f"{GATEWAY}/mcp", headers=self.headers) as (r, w, _):
+        async with streamablehttp_client(self.url, headers=self.headers) as (r, w, _):
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = await s.list_tools()
@@ -74,7 +87,7 @@ class Session:
 
     async def call(self, name: str, args: dict) -> tuple[bool, str, dict]:
         """Returns (is_error, text, eacp_data)."""
-        async with streamablehttp_client(f"{GATEWAY}/mcp", headers=self.headers) as (r, w, _):
+        async with streamablehttp_client(self.url, headers=self.headers) as (r, w, _):
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = await s.call_tool(name, args)
@@ -163,4 +176,8 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--smoke" in sys.argv[1:]:
+        from smoke import smoke
+
+        sys.exit(asyncio.run(smoke()))
     sys.exit(asyncio.run(main()))

@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
@@ -13,6 +14,9 @@ spec:
           backendRef:
             name: {{ include "mcp-tool.name" . }}
           port: 80
-          # TODO(verify): protocol enum for Streamable HTTP targets (docs examples show SSE) and
-          # whether a `path` field is needed when the server serves MCP at a sub-path.
+          # agentgateway 1.7: protocol is SSE or StreamableHTTP; path defaults to /mcp for
+          # StreamableHTTP and is set explicitly so a server on another path works too. The
+          # gateway terminates MCP, so the client-facing /mcp/<name> never reaches the server.
           protocol: StreamableHTTP
+          path: {{ include "mcp-tool.mcpPath" . | quote }}
+{{- end }}

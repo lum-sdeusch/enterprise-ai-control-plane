@@ -1,6 +1,6 @@
 # kind cluster for the laptop profile. Host ports map to NodePorts the platform exposes:
 #   8080  agentgateway (LLM, MCP, approvals)      -> http://gw.127.0.0.1.sslip.io:8080
-#   8081  Keycloak                                -> http://auth.127.0.0.1.sslip.io:8081
+#   8081  Keycloak (https, laptop CA)             -> https://auth.127.0.0.1.sslip.io:8081
 #   3080  LibreChat                               -> http://chat.127.0.0.1.sslip.io:3080
 #   8082  Argo CD, 8083 Langfuse, 8084 Jaeger, 8085 Mailpit
 kind: Cluster

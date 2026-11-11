@@ -20,3 +20,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    # A failed sync is not auto-synced again on the same commit, so it is retried here. A sync the
+    # controller stops at its 15-minute timeout is not retried at all; scripts/up.sh restarts it.
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

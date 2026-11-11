@@ -32,7 +32,9 @@ Hardening comes from Kubernetes primitives: Kyverno, pod security, network polic
 - The adapter implements agentgateway's ExtMCP protocol; the proto is vendored under adapter/proto.
 - ToolHive is documented as the alternative for teams that want argument-level Cedar at the edge.
 
-## To verify at build time
+## Verified at build time
 
 - The label kmcp puts on pods it creates, so the chart's Service selects them (charts/mcp-tool values: platform.kmcp.podLabelKey).
+  **Answer (ticket 03, kmcp v0.4.0 source):** app.kubernetes.io/name and app.kubernetes.io/instance, both set to the MCPServer name (pkg/controller/transportadapter/transportadapter_translator.go), so the default podLabelKey app.kubernetes.io/name is right. Read from the source, not yet exercised on a cluster; the first stdio server runs in ticket 06.
 - Whether the virtual MCP backend's label selector spans namespaces.
+  **Answer (ticket 03, agentgateway 1.7.0 on kind):** No. Without selector.namespaces only the backend's own namespace is searched; the aggregate in platform/charts/eacp-gateway selects namespaces carrying eacp.dev/team. Selected Services need appProtocol agentgateway.dev/mcp on the port. The target (and so the tool prefix) is named "<service>-<port name>" unless the Service carries agentgateway.dev/mcp-target-name, and the path comes from agentgateway.dev/mcp-path; the mcp-tool chart sets both, giving tickets_list_tickets on /mcp.

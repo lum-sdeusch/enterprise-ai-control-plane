@@ -28,6 +28,124 @@ spec:
         eacp.role:
         - approver
     clientScopes:
+    - name: basic
+      description: sub and auth_time
+      protocol: openid-connect
+      attributes:
+        include.in.token.scope: 'false'
+        display.on.consent.screen: 'false'
+      protocolMappers:
+      - name: sub
+        protocol: openid-connect
+        protocolMapper: oidc-sub-mapper
+        consentRequired: false
+        config:
+          access.token.claim: 'true'
+          introspection.token.claim: 'true'
+      - name: auth_time
+        protocol: openid-connect
+        protocolMapper: oidc-usersessionmodel-note-mapper
+        consentRequired: false
+        config:
+          user.session.note: AUTH_TIME
+          claim.name: auth_time
+          jsonType.label: long
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+          introspection.token.claim: 'true'
+    - name: profile
+      description: 'OpenID Connect built-in scope: profile'
+      protocol: openid-connect
+      attributes:
+        include.in.token.scope: 'true'
+        display.on.consent.screen: 'true'
+      protocolMappers:
+      - name: username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+      - name: given name
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: firstName
+          claim.name: given_name
+          jsonType.label: String
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+      - name: family name
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: lastName
+          claim.name: family_name
+          jsonType.label: String
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+      - name: full name
+        protocol: openid-connect
+        protocolMapper: oidc-full-name-mapper
+        consentRequired: false
+        config:
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+    - name: email
+      description: 'OpenID Connect built-in scope: email'
+      protocol: openid-connect
+      attributes:
+        include.in.token.scope: 'true'
+        display.on.consent.screen: 'true'
+      protocolMappers:
+      - name: email
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: email
+          claim.name: email
+          jsonType.label: String
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+      - name: email verified
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-property-mapper
+        consentRequired: false
+        config:
+          user.attribute: emailVerified
+          claim.name: email_verified
+          jsonType.label: boolean
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+          introspection.token.claim: 'true'
+    - name: web-origins
+      description: Allowed web origins in the access token
+      protocol: openid-connect
+      attributes:
+        include.in.token.scope: 'false'
+        display.on.consent.screen: 'false'
+      protocolMappers:
+      - name: allowed web origins
+        protocol: openid-connect
+        protocolMapper: oidc-allowed-origins-mapper
+        consentRequired: false
+        config:
+          access.token.claim: 'true'
+          introspection.token.claim: 'true'
     - name: eacp
       description: 'Claims the control plane needs: groups, team, clearance, data_label.'
       protocol: openid-connect
@@ -127,9 +245,10 @@ spec:
       webOrigins:
       - +
       defaultClientScopes:
-      - openid
+      - basic
       - profile
       - email
+      - web-origins
       - eacp
       - eacp-mcp-audience
       - eacp-llm-audience
@@ -145,7 +264,7 @@ spec:
       redirectUris:
       - http://gw.127.0.0.1.sslip.io:8080/approvals/callback
       defaultClientScopes:
-      - openid
+      - basic
       - profile
       - email
       - eacp
@@ -161,7 +280,7 @@ spec:
       redirectUris:
       - http://langfuse.127.0.0.1.sslip.io:8080/api/auth/callback/keycloak
       defaultClientScopes:
-      - openid
+      - basic
       - profile
       - email
       - eacp
@@ -174,6 +293,7 @@ spec:
       standardFlowEnabled: false
       serviceAccountsEnabled: true
       defaultClientScopes:
+      - basic
       - eacp
       attributes:
         eacp.kind: gateway
@@ -185,12 +305,36 @@ spec:
       directAccessGrantsEnabled: true
       serviceAccountsEnabled: false
       defaultClientScopes:
-      - openid
+      - basic
+      - profile
       - eacp
+      optionalClientScopes:
       - eacp-mcp-audience
       - eacp-llm-audience
       attributes:
         eacp.kind: demo
+    - clientId: eacp-mcp-public
+      name: MCP clients (Claude Code and IDEs)
+      enabled: true
+      publicClient: true
+      standardFlowEnabled: true
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+      - http://localhost:33418/callback
+      - http://127.0.0.1:33418/callback
+      webOrigins: []
+      defaultClientScopes:
+      - basic
+      - profile
+      - email
+      - eacp
+      - eacp-mcp-audience
+      optionalClientScopes:
+      - offline_access
+      attributes:
+        pkce.code.challenge.method: S256
+        eacp.kind: mcp-client
     - clientId: agent-redteam
       name: promptfoo red-team runner
       enabled: true
@@ -198,6 +342,7 @@ spec:
       standardFlowEnabled: false
       serviceAccountsEnabled: true
       defaultClientScopes:
+      - basic
       - eacp
       - eacp-mcp-audience
       - eacp-llm-audience
@@ -215,6 +360,7 @@ spec:
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: true
       defaultClientScopes:
+      - basic
       - eacp
       - eacp-mcp-audience
       - eacp-llm-audience
@@ -234,6 +380,7 @@ spec:
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: true
       defaultClientScopes:
+      - basic
       - eacp
       - eacp-mcp-audience
       - eacp-llm-audience
@@ -252,6 +399,8 @@ spec:
       emailVerified: true
       groups:
       - /support
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support
@@ -270,6 +419,8 @@ spec:
       groups:
       - /support
       - /support-approvers
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support
@@ -287,6 +438,8 @@ spec:
       emailVerified: true
       groups:
       - /support
+      realmRoles:
+      - default-roles-eacp
       attributes:
         team:
         - support

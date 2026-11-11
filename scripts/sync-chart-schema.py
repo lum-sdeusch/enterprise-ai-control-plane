@@ -84,6 +84,15 @@ PLATFORM = {
             "required": ["runAsUser"],
             "properties": {"runAsUser": {"type": "integer", "minimum": 1000}},
         },
+        "guardrails": {
+            "type": "object",
+            "properties": {"omitProcessor": {"type": "boolean"}},
+        },
+        "skipPlaceholderImages": {"type": "boolean"},
+        "localImages": {
+            "type": "object",
+            "additionalProperties": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+        },
     },
 }
 

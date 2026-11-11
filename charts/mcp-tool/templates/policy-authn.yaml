@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 agentgateway acts as the OAuth 2.1 resource server for this MCP server: it validates Keycloak
 JWTs against the realm JWKS, requires the MCP audience, and serves protected-resource metadata
@@ -31,18 +32,28 @@ spec:
                 namespace: {{ .Values.platform.keycloak.namespace }}
                 port: {{ .Values.platform.keycloak.port }}
               jwksPath: {{ .Values.platform.keycloak.jwksPath | quote }}
-          mcp:
-            provider: Keycloak
-            resourceMetadata:
-              resource: {{ include "mcp-tool.resourceUrl" . | quote }}
-              scopesSupported:
-                - openid
-                - profile
-                - email
-              bearerMethodsSupported:
-                - header
+      # MCP authorization (agentgateway 1.7: a sibling of providers, which must then hold exactly
+      # one entry). The protected-resource metadata names Keycloak itself as the authorization
+      # server. Without authorizationServers the gateway presents itself as the authorization
+      # server (issuer = this URL) while Keycloak stamps its own issuer on the authorization
+      # response, and clients that check RFC 9207 (Claude Code does) reject the login. Clients use
+      # the pre-registered public client eacp-mcp-public (`claude mcp add --client-id
+      # eacp-mcp-public --callback-port 33418 ...`); Keycloak refuses anonymous registration.
+      mcp:
+        provider: Keycloak
+        resourceMetadata:
+          resource: {{ include "mcp-tool.resourceUrl" . | quote }}
+          authorizationServers:
+            - {{ .Values.platform.keycloak.issuer | quote }}
+          scopesSupported:
+            - openid
+            - profile
+            - email
+          bearerMethodsSupported:
+            - header
     authorization:
       action: Allow
       policy:
         matchExpressions:
           - {{ include "mcp-tool.groupsCel" . | quote }}
+{{- end }}

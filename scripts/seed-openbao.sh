@@ -2,8 +2,9 @@
 # Seed OpenBao with the demo secrets and hand the generated OAuth client secrets to Keycloak.
 #
 #   scripts/seed-openbao.sh secrets    # write eacp/* into OpenBao (needs OpenBao unsealed)
-#   scripts/seed-openbao.sh keycloak   # set the eacp-gateway and eacp-adapter client secrets
+#   scripts/seed-openbao.sh keycloak   # set the eacp-gateway, eacp-adapter and demo-runner client secrets
 #   scripts/seed-openbao.sh            # both
+#   scripts/seed-openbao.sh runner-secret   # print the demo-runner client secret (demo/scenarios)
 #
 # OpenBao initialises and unseals itself (static seal plus self-initialisation, see the openbao
 # Application in platform/argocd/apps/00-foundation.yaml), so there is no root token. This script
@@ -18,7 +19,9 @@ set -euo pipefail
 NS=openbao
 POD=openbao-0
 MOUNT=secret
-KC_URL="${EACP_KEYCLOAK_URL:-http://127.0.0.1:8081}"
+KC_URL="${EACP_KEYCLOAK_URL:-https://auth.127.0.0.1.sslip.io:8081}"
+# Keycloak's certificate is signed by the laptop CA that scripts/up.sh exports.
+KC_CA="${EACP_CA_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.eacp/ca.pem}"
 KC_REALM=eacp
 TOKEN=""
 
@@ -105,6 +108,8 @@ seed_secrets() {
   seed_clickhouse
   put_once eacp/gateway/oauth-client "$(jq -n --arg s "$(rand)" '{"client-id": "eacp-gateway", "client-secret": $s}')"
   put_once eacp/adapter/oauth-client "$(jq -n --arg s "$(rand)" '{"client-id": "eacp-adapter", "client-secret": $s}')"
+  # The scenario runner's password-grant client (laptop only; demo/scenarios/run.py).
+  put_once eacp/demo/runner-client "$(jq -n --arg s "$(rand)" '{"client-id": "demo-runner", "client-secret": $s}')"
   # Matches the read-only role demo/k8s/customers-db.yaml creates.
   put_once eacp/tools/customer-db \
     '{"DSN":"postgresql://readonly:readonly-demo@customers-rw.demo.svc.cluster.local:5432/customers"}'
@@ -117,7 +122,7 @@ kc_admin_token() {
   local user pass
   user="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' | base64 -d)"
   pass="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)"
-  printf '%s' "$pass" | curl -sf "$KC_URL/realms/master/protocol/openid-connect/token" \
+  printf '%s' "$pass" | curl -sf --cacert "$KC_CA" "$KC_URL/realms/master/protocol/openid-connect/token" \
     -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$user" \
     --data-urlencode "password@-" | jq -r .access_token
 }
@@ -127,13 +132,13 @@ kc_set_client_secret() { # kc_set_client_secret ADMIN_TOKEN CLIENT_ID SECRET
   [[ -n "$2" && -n "$3" ]] || fail "kc_set_client_secret needs a client id and a secret"
   auth="Authorization: Bearer $1"
   # clientId is a search filter, not an exact match: keep only the client whose id is exactly $2.
-  id="$(curl -sfG -H @<(printf '%s' "$auth") --data-urlencode "clientId=$2" \
+  id="$(curl -sfG --cacert "$KC_CA" -H @<(printf '%s' "$auth") --data-urlencode "clientId=$2" \
     "$KC_URL/admin/realms/$KC_REALM/clients" |
     jq -r --arg c "$2" '[.[] | select(.clientId == $c)] | if length == 1 then .[0].id else empty end')"
   [[ -n "$id" ]] || fail "client $2 not found (exactly once) in realm $KC_REALM"
-  curl -sf -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients/$id" |
+  curl -sf --cacert "$KC_CA" -H @<(printf '%s' "$auth") "$KC_URL/admin/realms/$KC_REALM/clients/$id" |
     jq --arg s "$3" '.secret = $s' |
-    curl -sf -X PUT -H @<(printf '%s' "$auth") -H 'Content-Type: application/json' \
+    curl -sf --cacert "$KC_CA" -X PUT -H @<(printf '%s' "$auth") -H 'Content-Type: application/json' \
       --data-binary @- "$KC_URL/admin/realms/$KC_REALM/clients/$id"
   log "set Keycloak client secret for $2"
 }
@@ -144,7 +149,7 @@ seed_keycloak() {
   at="$(kc_admin_token)"
   [[ -n "$at" && "$at" != null ]] || fail "Keycloak admin login at $KC_URL failed"
   local client secret
-  for path in eacp/gateway/oauth-client eacp/adapter/oauth-client; do
+  for path in eacp/gateway/oauth-client eacp/adapter/oauth-client eacp/demo/runner-client; do
     client="$(field "$path" client-id)"
     secret="$(field "$path" client-secret)"
     [[ -n "$client" && -n "$secret" ]] || fail "$path is missing client-id or client-secret"
@@ -158,7 +163,8 @@ main() {
     secrets) seed_secrets ;;
     keycloak) seed_keycloak ;;
     all) seed_secrets; seed_keycloak ;;
-    *) echo "usage: $0 [secrets|keycloak|all]"; exit 2 ;;
+    runner-secret) login; field eacp/demo/runner-client client-secret ;;
+    *) echo "usage: $0 [secrets|keycloak|all|runner-secret]"; exit 2 ;;
   esac
 }
 

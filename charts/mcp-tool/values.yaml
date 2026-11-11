@@ -21,7 +21,7 @@ platform:
     grpcPort: 4445
     httpPort: 8080
   keycloak:
-    issuer: http://auth.127.0.0.1.sslip.io:8081/realms/eacp
+    issuer: https://auth.127.0.0.1.sslip.io:8081/realms/eacp
     serviceName: keycloak-service
     namespace: keycloak
     port: 8080
@@ -37,13 +37,21 @@ platform:
   kmcp:
     port: 3000
     path: /mcp
-    # TODO(verify): the label kmcp puts on the pods it creates, so the chart's Service can select them.
+    # kmcp v0.4.0 labels the pods it creates app.kubernetes.io/name=<MCPServer name> (ADR 0017).
     podLabelKey: app.kubernetes.io/name
   networkPolicy:
     # none | cilium. With cilium, egress fqdn rules render as CiliumNetworkPolicy toFQDNs.
     fqdn: none
   podSecurity:
     runAsUser: 10001
+  guardrails:
+    # true drops the adapter hook policy. Ticket 03 only, set by the tools ApplicationSet.
+    omitProcessor: false
+  # true renders nothing for a manifest whose image still has the all-zero placeholder digest.
+  # The tools ApplicationSet sets it; CI renders every manifest with it off.
+  skipPlaceholderImages: false
+  # Tool name -> image reference built on the laptop (scripts/demo-images.sh, via scripts/up.sh).
+  localImages: {}
 
 apiVersion: eacp.dev/v1alpha1
 kind: ToolManifest

@@ -1,7 +1,9 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 Per-server route at /mcp/<name>. The protected-resource metadata path is routed too so MCP
-clients can discover the authorization server for exactly this resource (RFC 9728). The
-aggregate /mcp route lives in platform/agentgateway/mcp-virtual-route.yaml.
+clients can discover the authorization server for exactly this resource (RFC 9728); that
+metadata names Keycloak, so no authorization-server path is routed here. The aggregate /mcp
+route lives in the eacp-gateway chart (platform/charts/eacp-gateway/templates/mcp-virtual.yaml).
 */ -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -26,3 +28,4 @@ spec:
         - name: {{ include "mcp-tool.name" . }}
           group: agentgateway.dev
           kind: AgentgatewayBackend
+{{- end }}

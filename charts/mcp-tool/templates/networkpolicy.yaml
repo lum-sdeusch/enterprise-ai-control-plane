@@ -1,3 +1,4 @@
+{{- if include "mcp-tool.deployable" . }}
 {{- /*
 Default deny in both directions. Ingress only from the gateway namespace on the MCP port.
 Egress only to DNS plus the manifest's allow-list. Standard NetworkPolicy cannot express
@@ -97,4 +98,5 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
+{{- end }}
 {{- end }}

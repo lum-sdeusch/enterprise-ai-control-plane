@@ -20,6 +20,9 @@ EACP_REPO="${EACP_REPO:-$DEFAULT_REPO}"
 EACP_REVISION="${EACP_REVISION:-main}"
 ARGOCD_CHART_VERSION=10.15.0   # Argo CD v3.6.1
 WAIT_TIMEOUT="${EACP_WAIT_TIMEOUT:-2400}"   # seconds for the platform to settle
+# The laptop CA that signs Keycloak's certificate (platform/keycloak/tls.yaml), exported here for
+# curl, the scenario runner and Claude Code (NODE_EXTRA_CA_CERTS).
+export EACP_CA_FILE="${EACP_CA_FILE:-$ROOT/.eacp/ca.pem}"
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1 (see the quick start in README.md)"; exit 1; }; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -56,6 +59,14 @@ coredns_rewrites() {
     -p "$(jq -n --arg c "$corefile" '{data: {Corefile: $c}}')" >/dev/null
   kubectl rollout restart deployment/coredns -n kube-system >/dev/null
   printf '    added: %s\n' "${missing[@]}"
+}
+
+# Demo servers built on the laptop (scripts/demo-images.sh), as "<tool> <image>@<digest>" lines.
+LOCAL_IMAGES=""
+
+demo_images() {
+  step "demo MCP server images (built locally, loaded into kind)"
+  LOCAL_IMAGES="$(scripts/demo-images.sh)"
 }
 
 install_argocd() {
@@ -101,8 +112,6 @@ record_bringup() {
 retarget_patches() {
   local r="$EACP_REPO" v="$EACP_REVISION"
   cat <<EOF
-    kustomize:
-      patches:
         - target: { kind: Application, labelSelector: eacp.dev/source=repo }
           patch: |
             - { op: replace, path: /spec/source/repoURL, value: "$r" }
@@ -122,21 +131,42 @@ retarget_patches() {
 EOF
 }
 
+# Kustomize patch that hands the locally built demo images to every tool Application.
+local_image_patch() {
+  local map
+  map="$(jq -Rnc '[inputs | select(length > 0) | split(" ") | {(.[0]): .[1]}] | add // {}' <<<"$LOCAL_IMAGES")"
+  cat <<EOF
+        - target: { kind: ApplicationSet, name: eacp-tools }
+          patch: |
+            - { op: add, path: /spec/template/spec/sources/0/helm/valuesObject/platform/localImages, value: $map }
+EOF
+}
+
+# Every patch the root application needs; prints nothing when it needs none.
+root_patches() {
+  local retarget=0
+  [[ "$EACP_REPO" == "$DEFAULT_REPO" && "$EACP_REVISION" == main ]] || retarget=1
+  ((retarget)) || [[ -n "$LOCAL_IMAGES" ]] || return 0
+  printf '    kustomize:\n      patches:\n'
+  ((retarget == 0)) || retarget_patches
+  [[ -z "$LOCAL_IMAGES" ]] || local_image_patch
+}
+
 root_app() {
   local file="platform/argocd/root-${PROFILE}.yaml"
   step "root application ($file, $EACP_REPO @ $EACP_REVISION)"
-  if [[ "$EACP_REPO" == "$DEFAULT_REPO" && "$EACP_REVISION" == main ]]; then
+  local patches
+  patches="$(mktemp)"
+  root_patches >"$patches"
+  if [[ ! -s "$patches" ]]; then
     kubectl apply -f "$file" >/dev/null
   else
-    local patches
-    patches="$(mktemp)"
-    retarget_patches >"$patches"
     sed -e "s#repoURL: $DEFAULT_REPO#repoURL: $EACP_REPO#" \
         -e "s#targetRevision: main#targetRevision: $EACP_REVISION#" \
         -e "\#^    path: platform/argocd/profiles/#r $patches" "$file" |
       kubectl apply -f - >/dev/null
-    rm -f "$patches"
   fi
+  rm -f "$patches"
   echo "    applied"
   record_bringup
 }
@@ -146,12 +176,34 @@ wait_for() { # wait_for DESCRIPTION COMMAND...: retry COMMAND every 5s until it 
   shift
   until "$@" >/dev/null 2>&1; do
     ((SECONDS < deadline)) || { echo "    timed out waiting for $what"; return 1; }
+    resync_root
     sleep 5
   done
 }
 
+# The controller stops a sync after 15 minutes (it happens when the laptop sleeps mid bring-up).
+# Argo CD neither retries that sync nor auto-syncs the same commit again, so the later waves would
+# stay unapplied; while up.sh waits, it starts the root sync again.
+resync_root() {
+  local message
+  message="$(kubectl get application eacp-root -n argocd \
+    -o jsonpath='{.status.operationState.phase} {.status.operationState.message}' 2>/dev/null)" || return 0
+  [[ "$message" == "Failed Operation terminated, triggered by controller sync timeout" ]] || return 0
+  kubectl patch application eacp-root -n argocd --type merge -p \
+    '{"operation":{"initiatedBy":{"username":"make-up"},"sync":{"prune":true,"syncOptions":["CreateNamespace=true"]}}}' \
+    >/dev/null && echo "    restarted the root sync after the controller's sync timeout"
+}
+
 openbao_ready() { kubectl wait --for=condition=Ready pod/openbao-0 -n openbao --timeout=5s; }
 realm_imported() { kubectl wait --for=condition=Done keycloakrealmimport/eacp -n keycloak --timeout=5s; }
+ca_issued() { kubectl get secret eacp-local-ca -n keycloak -o jsonpath='{.data.ca\.crt}' | grep -q .; }
+
+export_ca() {
+  wait_for "the laptop CA (cert-manager)" ca_issued
+  mkdir -p "$(dirname "$EACP_CA_FILE")"
+  kubectl get secret eacp-local-ca -n keycloak -o jsonpath='{.data.ca\.crt}' | base64 -d >"$EACP_CA_FILE"
+  echo "    laptop CA written to $EACP_CA_FILE"
+}
 
 seed() {
   [[ "$PROFILE" == laptop ]] || return 0
@@ -160,7 +212,8 @@ seed() {
   scripts/seed-openbao.sh secrets
   step "Keycloak: realm import and client secrets"
   wait_for "the eacp realm import" realm_imported
-  wait_for "Keycloak on host port 8081" curl -sf http://127.0.0.1:8081/realms/eacp
+  export_ca
+  wait_for "Keycloak on host port 8081" curl -sf --cacert "$EACP_CA_FILE" https://auth.127.0.0.1.sslip.io:8081/realms/eacp
   scripts/seed-openbao.sh keycloak
 }
 
@@ -206,7 +259,8 @@ summary() {
   cat <<EOF
 
 Gateway     http://gw.127.0.0.1.sslip.io:8080      (MCP at /mcp, LLM at /v1, approvals at /approvals)
-Keycloak    http://auth.127.0.0.1.sslip.io:8081   (realm eacp; demo users alice, bob, carol with password changeme-<name>)
+Keycloak    https://auth.127.0.0.1.sslip.io:8081  (realm eacp; demo users alice, bob, carol with password changeme-<name>)
+            signed by the laptop CA in $EACP_CA_FILE; for Claude Code: export NODE_EXTRA_CA_CERTS=$EACP_CA_FILE
 LibreChat   http://chat.127.0.0.1.sslip.io:3080
 Argo CD     http://127.0.0.1:8082                 (user admin, password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
 Langfuse    http://127.0.0.1:8083
@@ -223,6 +277,7 @@ main() {
     need docker; need kind
     kind_cluster
     coredns_rewrites
+    demo_images
   fi
   install_argocd
   if [[ "$PROFILE" == laptop ]]; then openbao_seal_key; fi

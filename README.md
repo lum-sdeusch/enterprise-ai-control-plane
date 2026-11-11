@@ -137,12 +137,43 @@ it image pulls). Running it again is harmless; `make down` deletes the cluster. 
 | Host port | What | URL |
 |---|---|---|
 | 8080 | agentgateway | http://gw.127.0.0.1.sslip.io:8080 |
-| 8081 | Keycloak (realm `eacp`; demo users alice, bob, carol with password `changeme-<name>`) | http://auth.127.0.0.1.sslip.io:8081 |
+| 8081 | Keycloak (realm `eacp`; demo users alice, bob, carol with password `changeme-<name>`) | https://auth.127.0.0.1.sslip.io:8081 (CA in `.eacp/ca.pem`) |
 | 8082 | Argo CD (user `admin`, password in the `argocd-initial-admin-secret` Secret) | http://127.0.0.1:8082 |
 
 The same `auth.` and `gw.` names resolve inside the cluster (CoreDNS rewrite), so the Keycloak
-issuer is identical for browsers and pods. Wave 0 and later (the eacp charts, models, tools,
+issuer is identical for browsers and pods. Keycloak is served over https with a certificate from
+a laptop CA that cert-manager creates; `make up` writes that CA to `.eacp/ca.pem`. A browser shows
+a certificate warning unless you trust that file. Wave 0 and later (the eacp charts, models,
 LibreChat, Langfuse) are later tickets and may not be healthy yet.
+
+Until CI publishes the demo images (ticket 05), `make up` builds the tickets server locally and
+loads it into kind (`scripts/demo-images.sh`). Tool manifests still on the placeholder digest are
+not deployed. `make smoke` checks the gateway and identity path: protected-resource metadata,
+audience checks, and tickets listed and called through `/mcp/tickets` and through `/mcp`.
+
+### Connect Claude Code
+
+Every MCP endpoint is an OAuth-protected resource whose metadata names Keycloak. Claude Code uses
+the pre-registered public client `eacp-mcp-public` (Keycloak does not accept anonymous dynamic
+registration) with a fixed callback port, and needs to trust the laptop CA because it refuses
+to send credentials to a token endpoint that is not https:
+
+```bash
+claude mcp add --transport http --client-id eacp-mcp-public --callback-port 33418 tickets http://gw.127.0.0.1.sslip.io:8080/mcp/tickets
+```
+
+```bash
+claude mcp add --transport http --client-id eacp-mcp-public --callback-port 33418 eacp http://gw.127.0.0.1.sslip.io:8080/mcp
+```
+
+```bash
+NODE_EXTRA_CA_CERTS="$PWD/.eacp/ca.pem" claude
+```
+
+In Claude Code, run `/mcp`, choose the server and sign in as a demo user. The per-server route
+shows `list_tickets`, `get_ticket`, `create_ticket` and `close_ticket`; the aggregate shows the
+same tools prefixed `tickets_`. Tokens carry the `eacp-mcp` audience only; the gateway rejects
+tokens minted for the LLM audience on MCP routes.
 
 ## Onboarding a tool in one pull request
 
@@ -217,11 +248,18 @@ step, OpenBao is seeded and the ExternalSecrets resolve, Keycloak serves the `ea
 user can log in, and the host ports above answer. Every chart and git source in `platform/argocd/`
 is pinned to a release that exists.
 
-Not yet done: the wave 0 and 1 Applications (the eacp charts, models, Langfuse, tools, demo) do not
-sync yet; later tickets in `.scratch/scaffold-to-poc/` bring them up. The build-time spikes listed
-in [docs/design.md section 11](docs/design.md#11-open-items-to-confirm-or-spike-before-building)
-are open. Fields marked `TODO(verify)` in `platform/` and `charts/` name the exact CRD details to
-confirm against a running agentgateway and kmcp.
+On the same cluster (2026-11-08, ticket 03): the tickets server runs in `team-support` from its
+manifest; Claude Code signs in through Keycloak and lists and calls the tickets tools through
+`/mcp/tickets` and through the aggregate `/mcp`; `make smoke` passes; a token for the MCP
+audience is accepted on MCP routes and a token for the LLM audience or no gateway audience is
+rejected. The adapter is not in the path yet (ticket 04 adds it).
+
+Not yet done: the eacp-system chart (adapter blocked by image verification), models, Langfuse
+and the demo Applications do not sync yet; later tickets in `.scratch/scaffold-to-poc/` bring
+them up. The build-time spikes listed in
+[docs/design.md section 11](docs/design.md#11-open-items-to-confirm-or-spike-before-building) are
+open. Fields still marked `TODO(verify)` in `platform/` name CRD details to confirm against a
+running agentgateway and kmcp; the gateway and tool charts have none left.
 
 ## License
 

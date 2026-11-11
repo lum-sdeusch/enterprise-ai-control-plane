@@ -24,6 +24,12 @@ from eacp_manifests import ROOT, ManifestSet, load_all, report, to_opa_data  # n
 REALM = "eacp"
 MCP_AUDIENCE = "eacp-mcp"
 LLM_AUDIENCE = "eacp-llm"
+# Pre-registered public client for MCP clients (Claude Code, IDEs): Keycloak refuses anonymous
+# dynamic registration, so clients are configured with this id and one fixed loopback callback
+# port: `claude mcp add --transport http --client-id eacp-mcp-public --callback-port 33418 ...`.
+MCP_PUBLIC_CLIENT = "eacp-mcp-public"
+MCP_CALLBACK_PORT = 33418
+DEFAULT_ROLES = f"default-roles-{REALM}"
 
 
 def _attr_mapper(name: str, attribute: str, claim: str) -> dict:
@@ -53,7 +59,81 @@ def _audience_mapper(name: str, audience: str) -> dict:
     }
 
 
-def realm_import(ms: ManifestSet) -> dict:
+def _mapper(name: str, mapper: str, config: dict[str, str]) -> dict:
+    return {"name": name, "protocol": "openid-connect", "protocolMapper": mapper, "consentRequired": False, "config": config}
+
+
+def _builtin_scopes() -> list[dict]:
+    """Keycloak's own basic, profile, email and web-origins scopes. A realm import that declares
+    clientScopes replaces the built-in set, so the ones clients rely on are declared here."""
+    hidden = {"include.in.token.scope": "false", "display.on.consent.screen": "false"}
+    shown = {"include.in.token.scope": "true", "display.on.consent.screen": "true"}
+    claim = {"id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "introspection.token.claim": "true"}
+    return [
+        {
+            "name": "basic",
+            "description": "sub and auth_time",
+            "protocol": "openid-connect",
+            "attributes": dict(hidden),
+            "protocolMappers": [
+                _mapper("sub", "oidc-sub-mapper", {"access.token.claim": "true", "introspection.token.claim": "true"}),
+                _mapper("auth_time", "oidc-usersessionmodel-note-mapper", {"user.session.note": "AUTH_TIME", "claim.name": "auth_time", "jsonType.label": "long", **claim}),
+            ],
+        },
+        {
+            "name": "profile",
+            "description": "OpenID Connect built-in scope: profile",
+            "protocol": "openid-connect",
+            "attributes": dict(shown),
+            "protocolMappers": [
+                _attr_mapper("username", "username", "preferred_username"),
+                _attr_mapper("given name", "firstName", "given_name"),
+                _attr_mapper("family name", "lastName", "family_name"),
+                _mapper("full name", "oidc-full-name-mapper", {"id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}),
+            ],
+        },
+        {
+            "name": "email",
+            "description": "OpenID Connect built-in scope: email",
+            "protocol": "openid-connect",
+            "attributes": dict(shown),
+            "protocolMappers": [
+                _attr_mapper("email", "email", "email"),
+                _mapper("email verified", "oidc-usermodel-property-mapper", {"user.attribute": "emailVerified", "claim.name": "email_verified", "jsonType.label": "boolean", **claim}),
+            ],
+        },
+        {
+            "name": "web-origins",
+            "description": "Allowed web origins in the access token",
+            "protocol": "openid-connect",
+            "attributes": dict(hidden),
+            "protocolMappers": [_mapper("allowed web origins", "oidc-allowed-origins-mapper", {"access.token.claim": "true", "introspection.token.claim": "true"})],
+        },
+    ]
+
+
+def _mcp_public_client() -> dict:
+    loopback = [f"http://{host}:{MCP_CALLBACK_PORT}/callback" for host in ("localhost", "127.0.0.1")]
+    return {
+        "clientId": MCP_PUBLIC_CLIENT,
+        "name": "MCP clients (Claude Code and IDEs)",
+        "enabled": True,
+        "publicClient": True,
+        "standardFlowEnabled": True,
+        "directAccessGrantsEnabled": False,
+        "serviceAccountsEnabled": False,
+        "redirectUris": loopback,
+        "webOrigins": [],
+        # MCP audience only: an MCP client's token is not accepted on the LLM path.
+        "defaultClientScopes": ["basic", "profile", "email", "eacp", "eacp-mcp-audience"],
+        # Claude Code asks for offline_access (a refresh token that outlives the browser session);
+        # Keycloak creates that scope itself, and rejects the whole request if the client lacks it.
+        "optionalClientScopes": ["offline_access"],
+        "attributes": {"pkce.code.challenge.method": "S256", "eacp.kind": "mcp-client"},
+    }
+
+
+def _groups(ms: ManifestSet) -> list[dict]:
     groups = []
     for team, m in sorted(ms.teams.items()):
         for g in m["spec"]["groups"]:
@@ -61,7 +141,11 @@ def realm_import(ms: ManifestSet) -> dict:
         for g in m["spec"]["approverGroups"]:
             groups.append({"name": g, "attributes": {"team": [team], "eacp.role": ["approver"]}})
 
-    client_scopes = [
+    return groups
+
+
+def _client_scopes() -> list[dict]:
+    return _builtin_scopes() + [
         {
             "name": "eacp",
             "description": "Claims the control plane needs: groups, team, clearance, data_label.",
@@ -100,7 +184,13 @@ def realm_import(ms: ManifestSet) -> dict:
         },
     ]
 
-    clients = [
+
+def _platform_clients() -> list[dict]:
+    return _resource_and_ui_clients() + _service_clients()
+
+
+def _resource_and_ui_clients() -> list[dict]:
+    return [
         # Resource audiences. bearer-only clients exist so audience mappers and token exchange
         # have a client to point at; nobody logs in to them.
         {"clientId": MCP_AUDIENCE, "name": "eacp MCP gateway resource", "bearerOnly": True, "enabled": True},
@@ -116,7 +206,7 @@ def realm_import(ms: ManifestSet) -> dict:
             # TODO(deploy): set to the LibreChat URL of the profile in use.
             "redirectUris": ["http://chat.127.0.0.1.sslip.io:3080/oauth/openid/callback"],
             "webOrigins": ["+"],
-            "defaultClientScopes": ["openid", "profile", "email", "eacp", "eacp-mcp-audience", "eacp-llm-audience"],
+            "defaultClientScopes": ["basic", "profile", "email", "web-origins", "eacp", "eacp-mcp-audience", "eacp-llm-audience"],
             "attributes": {"eacp.kind": "ui"},
         },
         {
@@ -130,7 +220,7 @@ def realm_import(ms: ManifestSet) -> dict:
             "serviceAccountsEnabled": False,
             # TODO(deploy): the gateway public URL of the profile in use plus /approvals/callback.
             "redirectUris": ["http://gw.127.0.0.1.sslip.io:8080/approvals/callback"],
-            "defaultClientScopes": ["openid", "profile", "email", "eacp"],
+            "defaultClientScopes": ["basic", "profile", "email", "eacp"],
             "attributes": {"eacp.kind": "ui"},
         },
         {
@@ -143,9 +233,14 @@ def realm_import(ms: ManifestSet) -> dict:
             "directAccessGrantsEnabled": False,
             "serviceAccountsEnabled": False,
             "redirectUris": ["http://langfuse.127.0.0.1.sslip.io:8080/api/auth/callback/keycloak"],
-            "defaultClientScopes": ["openid", "profile", "email", "eacp"],
+            "defaultClientScopes": ["basic", "profile", "email", "eacp"],
             "attributes": {"eacp.kind": "ui"},
         },
+    ]
+
+
+def _service_clients() -> list[dict]:
+    return [
         {
             # The gateway's own identity for RFC 8693 token exchange toward tool backends.
             "clientId": "eacp-gateway",
@@ -154,7 +249,7 @@ def realm_import(ms: ManifestSet) -> dict:
             "publicClient": False,
             "standardFlowEnabled": False,
             "serviceAccountsEnabled": True,
-            "defaultClientScopes": ["eacp"],
+            "defaultClientScopes": ["basic", "eacp"],
             "attributes": {"eacp.kind": "gateway"},
         },
         {
@@ -167,9 +262,13 @@ def realm_import(ms: ManifestSet) -> dict:
             "standardFlowEnabled": False,
             "directAccessGrantsEnabled": True,
             "serviceAccountsEnabled": False,
-            "defaultClientScopes": ["openid", "eacp", "eacp-mcp-audience", "eacp-llm-audience"],
+            # Audiences are optional so the runner can mint a token for one audience, both or
+            # neither (demo/scenarios/run.py --smoke checks the wrong-audience rejection).
+            "defaultClientScopes": ["basic", "profile", "eacp"],
+            "optionalClientScopes": ["eacp-mcp-audience", "eacp-llm-audience"],
             "attributes": {"eacp.kind": "demo"},
         },
+        _mcp_public_client(),
         {
             # Nightly red-team identity used by .github/workflows/nightly-redteam.yaml.
             "clientId": "agent-redteam",
@@ -178,10 +277,14 @@ def realm_import(ms: ManifestSet) -> dict:
             "publicClient": False,
             "standardFlowEnabled": False,
             "serviceAccountsEnabled": True,
-            "defaultClientScopes": ["eacp", "eacp-mcp-audience", "eacp-llm-audience"],
+            "defaultClientScopes": ["basic", "eacp", "eacp-mcp-audience", "eacp-llm-audience"],
             "attributes": {"eacp.kind": "scheduled", "eacp.team": "security", "eacp.owner": "security@example.com"},
         },
     ]
+
+
+def _agent_clients(ms: ManifestSet) -> list[dict]:
+    clients = []
     for name, m in sorted(ms.agents.items()):
         spec = m["spec"]
         clients.append(
@@ -197,7 +300,7 @@ def realm_import(ms: ManifestSet) -> dict:
                 # use it directly (after Kubernetes service-account federation); interactive agents
                 # use it as the actor token in the delegation exchange (ADR 0023).
                 "serviceAccountsEnabled": True,
-                "defaultClientScopes": ["eacp", "eacp-mcp-audience", "eacp-llm-audience"],
+                "defaultClientScopes": ["basic", "eacp", "eacp-mcp-audience", "eacp-llm-audience"],
                 "attributes": {
                     "eacp.kind": spec["kind"],
                     "eacp.team": m["metadata"]["team"],
@@ -207,9 +310,12 @@ def realm_import(ms: ManifestSet) -> dict:
                 },
             }
         )
+    return clients
 
+
+def _demo_users() -> list[dict]:
     # Demo users for the laptop profile only. Temporary passwords; Keycloak forces a change.
-    users = [
+    return [
         {
             "username": "alice",
             "email": "alice@example.com",
@@ -218,6 +324,9 @@ def realm_import(ms: ManifestSet) -> dict:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["restricted"]},
             "credentials": [{"type": "password", "value": "changeme-alice", "temporary": True}],
         },
@@ -229,6 +338,9 @@ def realm_import(ms: ManifestSet) -> dict:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support", "/support-approvers"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["confidential"]},
             "credentials": [{"type": "password", "value": "changeme-bob", "temporary": True}],
         },
@@ -241,11 +353,16 @@ def realm_import(ms: ManifestSet) -> dict:
             "enabled": True,
             "emailVerified": True,
             "groups": ["/support"],
+            # Imported users get no roles at all, not even the realm default role, so this is
+            # explicit: it carries offline_access, which Claude Code asks for.
+            "realmRoles": [DEFAULT_ROLES],
             "attributes": {"team": ["support"], "clearance": ["internal"]},
             "credentials": [{"type": "password", "value": "changeme-carol", "temporary": True}],
         },
     ]
 
+
+def realm_import(ms: ManifestSet) -> dict:
     return {
         "apiVersion": "k8s.keycloak.org/v2alpha1",
         "kind": "KeycloakRealmImport",
@@ -258,10 +375,10 @@ def realm_import(ms: ManifestSet) -> dict:
                 "enabled": True,
                 "sslRequired": "external",
                 "accessTokenLifespan": 900,
-                "groups": groups,
-                "clientScopes": client_scopes,
-                "clients": clients,
-                "users": users,
+                "groups": _groups(ms),
+                "clientScopes": _client_scopes(),
+                "clients": _platform_clients() + _agent_clients(ms),
+                "users": _demo_users(),
                 # TODO(verify): Keycloak 26.8 feature flags for the delegation (actor token) preview and
                 # the identity-assertion-jwt experimental feature are set on the Keycloak CR, see
                 # platform/keycloak/keycloak.yaml, not in the realm.

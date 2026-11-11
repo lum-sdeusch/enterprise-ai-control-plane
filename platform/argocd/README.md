@@ -11,8 +11,8 @@ Sync waves order the bring-up:
 | -3 | Gateway API CRDs, kmcp CRDs |
 | -2 | cert-manager, Kyverno, External Secrets Operator, OpenBao, CloudNativePG, Keycloak operator, agentgateway CRDs, kmcp |
 | -1 | agentgateway and the Gateway (`platform/gateway`), the openbao ClusterSecretStore, Keycloak with the realm import, telemetry stores (ClickHouse, PostgreSQL, Valkey, SeaweedFS) |
-| 0 | namespaces and ReferenceGrants generated from team manifests, eacp-gateway and eacp-system charts, Kyverno policies, models, OTel collector, Jaeger, Langfuse |
-| 1 | tools (ApplicationSet from `tools/*/manifest.yaml`), demo |
+| 0 | namespaces and ReferenceGrants generated from team manifests, eacp-gateway and eacp-system charts, Kyverno policies, models, OTel collector, Jaeger, Langfuse, tools (ApplicationSet from `tools/*/manifest.yaml`; a tool's hook fails closed until the adapter runs) |
+| 1 | demo |
 
 Every chart and git source is pinned to a release that exists (checked against the registries
 on 2026-11-07). OCI chart registries are registered in `install-values.yaml`, which `scripts/up.sh`

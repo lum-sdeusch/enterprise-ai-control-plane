@@ -16,6 +16,7 @@ venv/
 node_modules/
 
 # local secrets and env
+.eacp/
 .env
 *.local.yaml
 platform/secrets/

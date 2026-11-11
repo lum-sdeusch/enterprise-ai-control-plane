@@ -6,6 +6,13 @@
 #
 # The in-house concrete model (eacp-inhouse) is profile specific and lives in
 # platform/argocd/profiles/<profile>/models.yaml.
+#
+# Rendered only with llm.enabled (ticket 07). Checked against the agentgateway 1.7 CRDs in
+# ticket 03 (ADR 0018): AgentgatewayModel has no `model` field (the name clients ask for is
+# match.model, defaulting to metadata.name), virtual models must be Public and cannot carry
+# policies, and a callout's transformation.model must name a concrete model. Ticket 07 rewrites
+# the resources below accordingly.
+{{- if .Values.llm.enabled }}
 
 # --- concrete external models --------------------------------------------------------------------
 apiVersion: agentgateway.dev/v1alpha1
@@ -20,9 +27,8 @@ spec:
       name: agentgateway-proxy
       sectionName: http
   visibility: Internal
-  # TODO(verify): provider name and model field for Anthropic on AgentgatewayModel; the verified
-  # example uses provider: OpenAI with baseURL. The AgentgatewayBackend form is
-  # `anthropic: {model: ...}` with policies.auth.secretRef (see failover docs).
+  # Verified (1.7): `provider: Anthropic` exists; `model` does not (schema rejects it). The
+  # requested name is match.model; ticket 07 decides how the upstream model id is set.
   provider: Anthropic
   model: {{ .Values.external.primaryModel }}
   policies:
@@ -98,8 +104,8 @@ spec:
         name: eacp-adapter
         namespace: eacp-system
         port: 8080
-      # TODO(verify): path override for a backendRef callout; the documented example sets the
-      # full path in `url`. The adapter serves the route decision at /v1/route.
+      # Verified (1.7): callout.headers accepts the `:path` pseudo-header, which is how a
+      # backendRef callout reaches the adapter's /v1/route.
       body: '{"messages": llmRequest.messages, "model": llmRequest.model}'
       headers:
         x-eacp-sub: jwt.sub
@@ -113,8 +119,8 @@ spec:
         traceparent: 'has(request.headers["traceparent"]) ? request.headers["traceparent"] : ""'
       transformation:
         # The adapter answers {"model": "eacp-external" | "eacp-inhouse"}.
-        # TODO(verify): whether a callout may target another virtual model; if not, the adapter
-        # returns the concrete name (claude-sonnet / eacp-inhouse) instead.
+        # Verified (1.7): transformation.model must select a concrete model (matched against
+        # match.model of models on the same listener), so the adapter returns a concrete name.
         model: callout.body.model
       fallback:
         modelRef:
@@ -142,3 +148,4 @@ spec:
         - 502
         - 503
         - 529
+{{- end }}

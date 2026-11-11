@@ -50,7 +50,7 @@ platform:
   # true renders nothing for a manifest whose image still has the all-zero placeholder digest.
   # The tools ApplicationSet sets it; CI renders every manifest with it off.
   skipPlaceholderImages: false
-  # Tool name -> image reference built on the laptop (scripts/demo-images.sh, via scripts/up.sh).
+  # Tool name -> image reference built on the laptop (scripts/local-images.sh, via scripts/up.sh).
   localImages: {}
 
 apiVersion: eacp.dev/v1alpha1

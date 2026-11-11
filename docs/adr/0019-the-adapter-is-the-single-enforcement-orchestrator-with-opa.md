@@ -25,3 +25,7 @@ the adapter, Python for the guardrail service. Budget revised to 2,500 to 3,000 
 ## Consequences
 
 - adapter/internal/pipeline is the one place to read to understand enforcement order.
+- Verified against agentgateway 1.7.0 (ticket 04, test/pathway): the hook learns everything from metadata_context, filled by CEL expressions on the processor. The contract is documented in adapter/internal/extmcp and set identically in charts/mcp-tool, platform/charts/eacp-gateway and the pathway test.
+- The adapter's only identity source is the `jwt` metadata entry, the claims of the token the gateway verified. The Authorization header does not reach the hook, and the adapter no longer decodes bearer tokens at all: on a route that lacks a JWT policy it would otherwise trust a token nobody verified. Such a route gets a denial.
+- A denied tools/call reaches the client as a tool result with isError true whose text is the denial; the gateway drops structured error data for that method. The text is therefore a JSON object carrying eacp_code, every reason code and the conversation id. Denied listings are JSON-RPC errors with the same data.
+- The pathway test found three defects no unit test had - an adapter that crashed at start on an OpenTelemetry schema conflict, a policy bundle that shipped without its data, and denial codes that never reached the client. It now runs in CI on every pull request.

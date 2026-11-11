@@ -5,66 +5,183 @@
   "description": "An agent identity: a Keycloak client, its owner, risk tier, the tools it may use and the model classes it may call. Compiled into OPA data and the Keycloak realm import.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
   "properties": {
-    "apiVersion": { "const": "eacp.dev/v1alpha1" },
-    "kind": { "const": "AgentManifest" },
+    "apiVersion": {
+      "const": "eacp.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "AgentManifest"
+    },
     "metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "team", "owner"],
+      "required": [
+        "name",
+        "team",
+        "owner"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },
-        "team": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },
-        "owner": { "type": "string", "format": "email", "description": "The accountable human. Required even for scheduled agents; there is always someone to call." },
-        "description": { "type": "string", "maxLength": 500 }
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+        },
+        "team": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+        },
+        "owner": {
+          "type": "string",
+          "format": "email",
+          "description": "The accountable human. Required even for scheduled agents; there is always someone to call."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        }
       }
     },
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "identity", "riskTier", "allowedTools", "allowedModelClasses", "maxClassification"],
+      "required": [
+        "kind",
+        "identity",
+        "riskTier",
+        "allowedTools",
+        "allowedModelClasses",
+        "maxClassification"
+      ],
       "properties": {
         "kind": {
-          "enum": ["interactive", "scheduled"],
+          "enum": [
+            "interactive",
+            "scheduled"
+          ],
           "description": "interactive: acts on behalf of a logged-in user; the token carries the user as subject and this agent in the actor chain. scheduled: runs without a user; authenticates with its own workload identity."
         },
         "identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["clientId"],
+          "required": [
+            "clientId"
+          ],
           "properties": {
-            "clientId": { "type": "string", "pattern": "^agent-[a-z0-9-]+$", "description": "Keycloak client id. Generated into the realm import." },
-            "serviceAccount": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$", "description": "Kubernetes service account whose projected token is federated into Keycloak. Scheduled agents only." }
+            "clientId": {
+              "type": "string",
+              "pattern": "^agent-[a-z0-9-]+$",
+              "description": "Keycloak client id. Generated into the realm import."
+            },
+            "serviceAccount": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$",
+              "description": "Kubernetes service account whose projected token is federated into Keycloak. Scheduled agents only."
+            },
+            "actsThrough": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+              },
+              "description": "Client ids of user-facing applications through which this agent is used (a chat UI, an IDE's MCP client, a test runner). A token issued to one of them, without an actor claim, is treated as this agent acting for the token's subject. Interactive agents only; a client id may belong to one agent. Tokens from the delegation flow carry the agent in the actor claim and need no entry here."
+            }
           }
         },
-        "riskTier": { "enum": ["low", "medium", "high"] },
+        "riskTier": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
         "allowedTools": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?/([A-Za-z0-9_.-]{1,64}|\\*)$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?/([A-Za-z0-9_.-]{1,64}|\\*)$"
+          },
           "description": "server/tool or server/* entries. tools/list for this agent is the intersection of these with the caller's group entitlement."
         },
         "allowedModelClasses": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["external", "inhouse"] }
+          "items": {
+            "enum": [
+              "external",
+              "inhouse"
+            ]
+          }
         },
         "maxClassification": {
-          "enum": ["public", "internal", "confidential", "restricted"],
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ],
           "description": "Ceiling on the classification of data this agent may handle. A tool whose outputClassification exceeds it is denied."
         },
-        "schedule": { "type": "string", "pattern": "^(\\S+\\s+){4}\\S+$", "description": "Cron expression. Scheduled agents only." },
-        "image": { "type": "string", "pattern": "^[a-z0-9.\\-/_:]+@sha256:[a-f0-9]{64}$", "description": "Image of the scheduled agent, pinned by digest." }
+        "schedule": {
+          "type": "string",
+          "pattern": "^(\\S+\\s+){4}\\S+$",
+          "description": "Cron expression. Scheduled agents only."
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z0-9.\\-/_:]+@sha256:[a-f0-9]{64}$",
+          "description": "Image of the scheduled agent, pinned by digest."
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "kind": { "const": "scheduled" } } },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "scheduled"
+              }
+            }
+          },
           "then": {
-            "required": ["schedule", "image"],
-            "properties": { "identity": { "required": ["serviceAccount"] } }
+            "required": [
+              "schedule",
+              "image"
+            ],
+            "properties": {
+              "identity": {
+                "required": [
+                  "serviceAccount"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "scheduled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "not": {
+                  "required": [
+                    "actsThrough"
+                  ]
+                }
+              }
+            }
           }
         }
       ]

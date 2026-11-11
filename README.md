@@ -146,10 +146,30 @@ a laptop CA that cert-manager creates; `make up` writes that CA to `.eacp/ca.pem
 a certificate warning unless you trust that file. Wave 0 and later (the eacp charts, models,
 LibreChat, Langfuse) are later tickets and may not be healthy yet.
 
-Until CI publishes the demo images (ticket 05), `make up` builds the tickets server locally and
-loads it into kind (`scripts/demo-images.sh`). Tool manifests still on the placeholder digest are
-not deployed. `make smoke` checks the gateway and identity path: protected-resource metadata,
-audience checks, and tickets listed and called through `/mcp/tickets` and through `/mcp`.
+Until CI publishes images (ticket 05), `make up` builds the tickets server, the adapter and the
+guardrail service locally and loads them into kind (`scripts/local-images.sh`). Tool manifests
+still on the placeholder digest are not deployed. The laptop's policy bundle is built from the
+checkout into a ConfigMap; after a policy change, `make policy-load` rebuilds it and restarts the
+adapter. `make smoke` checks the gateway and identity path: protected-resource metadata, audience
+checks, and tickets listed and called through `/mcp/tickets` and through `/mcp`.
+`make pathway-cluster` checks enforcement: listings by entitlement, a denial with its code, the
+audit rows, the trace in Jaeger, and that a stopped policy engine closes the gate.
+
+### The pathway test, without a cluster
+
+```bash
+pip install -r test/pathway/requirements.txt
+make pathway                       # about a minute
+test/pathway/run.sh --clickhouse   # the same, plus the audit store in a ClickHouse container
+make pathway-probe                 # prints what the gateway sends to the policy hook on each phase
+```
+
+`test/pathway/run.sh` starts the real agentgateway (Docker, or a binary in `EACP_AGENTGATEWAY`)
+in front of the adapter, OPA, the guardrail service and the tickets server on one machine, and
+checks the contract between the gateway's policy hook and the adapter: identity, trace context,
+the metadata carried from the request phase to the response phase, listing filters and pins,
+denials as the client sees them, audit rows and fail-closed behaviour. It takes about a minute
+and runs in CI on every pull request. A new agentgateway version is tried here first.
 
 ### Connect Claude Code
 
@@ -221,6 +241,7 @@ signed and the pod is restricted. The tool appears in `tools/list` only for enti
 | `adapter/` | Go. agentgateway ExtMCP hook, LLM prompt guard and routing callout, OPA, taint, approvals, audit |
 | `guardrails/` | Python. PII, secrets, injection, sensitivity and judge detectors behind one HTTP API |
 | `demo/` | Demo MCP servers, LibreChat config, the scheduled agent, scenario runner |
+| `test/pathway/` | The adapter behind a real agentgateway on one machine, without Kubernetes |
 | `promptfoo/` | Nightly red-team configuration |
 | `scripts/` | Manifest compilation, validation, bundle build, ADR generation, cluster bring-up |
 
@@ -252,11 +273,21 @@ On the same cluster (2026-11-08, ticket 03): the tickets server runs in `team-su
 manifest; Claude Code signs in through Keycloak and lists and calls the tickets tools through
 `/mcp/tickets` and through the aggregate `/mcp`; `make smoke` passes; a token for the MCP
 audience is accepted on MCP routes and a token for the LLM audience or no gateway audience is
-rejected. The adapter is not in the path yet (ticket 04 adds it).
+rejected.
 
-Not yet done: the eacp-system chart (adapter blocked by image verification), models, Langfuse
-and the demo Applications do not sync yet; later tickets in `.scratch/scaffold-to-poc/` bring
-them up. The build-time spikes listed in
+Against agentgateway 1.7.0 on one machine (2026-11-11, ticket 04, `test/pathway`): the adapter
+receives the caller's verified claims and the trace context on both hook phases, and the response
+phase receives the tool name and conversation id the request phase stashed; listings show a
+caller only entitled tools, on the per-server route and on the aggregate, under one pin; a denied
+call reaches an MCP client with its `eacp_code` and conversation id; every phase writes one audit
+row, also into ClickHouse with the cluster's schema and its insert-only user; one call is one
+trace with the adapter's spans under the gateway's; a stopped OPA or adapter closes the gate.
+
+Not yet verified for ticket 04: the same on the kind cluster. The charts, `make up` and
+`make pathway-cluster` are written for it and render, but have not run against a cluster.
+
+Not yet done: models, Langfuse and the demo Applications do not sync yet; later tickets in
+`.scratch/scaffold-to-poc/` bring them up. The build-time spikes listed in
 [docs/design.md section 11](docs/design.md#11-open-items-to-confirm-or-spike-before-building) are
 open. Fields still marked `TODO(verify)` in `platform/` name CRD details to confirm against a
 running agentgateway and kmcp; the gateway and tool charts have none left.

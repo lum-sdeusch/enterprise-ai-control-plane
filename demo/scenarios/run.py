@@ -11,6 +11,7 @@ demo users from the generated realm, the demo-runner client secret (EACP_RUNNER_
 from `scripts/seed-openbao.sh runner-secret`), and the `mcp` and `httpx` packages.
 
 `run.py --smoke` runs only the gateway and identity checks of ticket 03 (demo/scenarios/smoke.py).
+`run.py --pathway` runs the adapter-in-the-pathway checks of ticket 04 (demo/scenarios/pathway.py).
 TODO(verify): the `mcp` SDK v2 client API for spec 2026-07-28 (handshake-free sessions).
 """
 
@@ -26,6 +27,7 @@ from dataclasses import dataclass, field
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.exceptions import McpError
 
 GATEWAY = os.environ.get("EACP_GATEWAY_URL", "http://gw.127.0.0.1.sslip.io:8080").rstrip("/")
 TOKEN_URL = os.environ.get("EACP_KEYCLOAK_TOKEN_URL", "https://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token")
@@ -71,34 +73,69 @@ def user_token(username: str, password: str, audiences: tuple[str, ...] = ("eacp
     return resp.json()["access_token"]
 
 
+def _protocol_error(exc: BaseException) -> tuple[bool, str, dict]:
+    """The JSON-RPC error behind an SDK exception, which may be nested in task groups."""
+    stack = [exc]
+    while stack:
+        e = stack.pop()
+        if isinstance(e, McpError):
+            return True, e.error.message, e.error.data if isinstance(e.error.data, dict) else {}
+        stack.extend(getattr(e, "exceptions", []))
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+        raise exc
+    return True, f"{type(exc).__name__}: {exc}", {}
+
+
 class Session:
-    """One caller on one MCP endpoint: the aggregate /mcp by default, or a per-server /mcp/<name>."""
+    """One caller on one MCP endpoint: the aggregate /mcp by default, or a per-server /mcp/<name>.
+
+    How a policy denial arrives depends on the method (agentgateway 1.7; test/pathway checks it):
+    a denied tools/call is a tool result with isError true whose text is the JSON object
+    {"error": "eacp_policy", "message": ..., "data": {"eacp_code": ..., ...}}; a denied listing is
+    a JSON-RPC error whose data member is that data object. Both end up in the third element of
+    what call() returns, or in the dict tools() returns instead of a list.
+    """
 
     def __init__(self, token: str, conversation_id: str | None = None, path: str = "/mcp"):
-        self.headers = {"Authorization": f"Bearer {token}", "x-eacp-conversation-id": conversation_id or f"demo:{uuid.uuid4()}"}
+        self.conversation = conversation_id or f"demo:{uuid.uuid4()}"
+        self.trace_id = uuid.uuid4().hex
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "x-eacp-conversation-id": self.conversation,
+            "traceparent": f"00-{self.trace_id}-{uuid.uuid4().hex[:16]}-01",
+        }
         self.url = f"{GATEWAY}{path}"
 
-    async def tools(self) -> list[str]:
+    async def _with_session(self, fn):
         async with streamablehttp_client(self.url, headers=self.headers) as (r, w, _):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                res = await s.list_tools()
-                return [t.name for t in res.tools]
+                return await fn(s)
+
+    async def tools(self) -> list[str] | dict:
+        """The listed tool names, or the denial's data when the listing was refused."""
+        try:
+            res = await self._with_session(lambda s: s.list_tools())
+            return [t.name for t in res.tools]
+        except BaseException as e:  # noqa: BLE001 - the SDK wraps protocol errors in groups
+            _, message, data = _protocol_error(e)
+            return {"message": message, **data}
 
     async def call(self, name: str, args: dict) -> tuple[bool, str, dict]:
         """Returns (is_error, text, eacp_data)."""
-        async with streamablehttp_client(self.url, headers=self.headers) as (r, w, _):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                res = await s.call_tool(name, args)
-                text = "\n".join(getattr(c, "text", "") for c in res.content)
-                data = {}
-                if res.isError:
-                    try:
-                        data = json.loads(text).get("data", {})
-                    except (ValueError, AttributeError):
-                        pass
-                return bool(res.isError), text, data
+        try:
+            res = await self._with_session(lambda s: s.call_tool(name, args))
+        except BaseException as e:  # noqa: BLE001
+            return _protocol_error(e)
+        text = "\n".join(getattr(c, "text", "") for c in res.content)
+        if res.isError:
+            try:
+                body = json.loads(text)
+                if isinstance(body, dict) and body.get("error") == "eacp_policy":
+                    return True, body.get("message", ""), body.get("data", {})
+            except ValueError:
+                pass
+        return bool(res.isError), text, {}
 
     async def chat(self, prompt: str, model: str = "eacp-auto") -> tuple[int, dict]:
         async with httpx.AsyncClient(timeout=120) as c:
@@ -180,4 +217,8 @@ if __name__ == "__main__":
         from smoke import smoke
 
         sys.exit(asyncio.run(smoke()))
+    if "--pathway" in sys.argv[1:]:
+        from pathway import pathway
+
+        sys.exit(asyncio.run(pathway()))
     sys.exit(asyncio.run(main()))

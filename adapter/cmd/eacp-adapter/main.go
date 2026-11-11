@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,7 +45,11 @@ func main() {
 
 func run() error {
 	cfg := config.FromEnv()
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	level := slog.LevelInfo
+	if strings.EqualFold(os.Getenv("EACP_LOG_LEVEL"), "debug") {
+		level = slog.LevelDebug // logs the shape of every hook call: header and metadata names, never values
+	}
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(log)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -105,7 +110,7 @@ func run() error {
 	// HTTP: LLM hooks, approvals, health.
 	mux := http.NewServeMux()
 	(&llm.Handler{P: p, Log: log}).Register(mux)
-	web, err := approval.NewWeb(ctx, cfg, as, aud, log)
+	web, err := approval.NewWeb(cfg, as, aud, log)
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,7 @@ app.kubernetes.io/name: {{ include "mcp-tool.name" . }}
 
 {{/*
 The image the workload runs: a laptop-only local build (platform.localImages, filled by
-scripts/up.sh from scripts/demo-images.sh) wins over the manifest's image.
+scripts/up.sh from scripts/local-images.sh) wins over the manifest's image.
 */}}
 {{- define "mcp-tool.image" -}}
 {{- $local := .Values.platform.localImages | default dict -}}

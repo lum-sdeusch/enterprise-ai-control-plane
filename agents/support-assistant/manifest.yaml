@@ -9,6 +9,14 @@ spec:
   kind: interactive
   identity:
     clientId: agent-support-assistant
+    # User-facing clients this agent is reached through. Their tokens carry the user and the
+    # client (azp) but no actor claim, so the control plane resolves the agent from the client:
+    # LibreChat, Claude Code's public MCP client, and the scenario runner. The delegation flow
+    # (ADR 0023) names the agent in the actor claim instead and needs no entry here.
+    actsThrough:
+      - librechat
+      - eacp-mcp-public
+      - demo-runner
   riskTier: medium
   allowedTools:
     - customer-db/*

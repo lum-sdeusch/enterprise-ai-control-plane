@@ -45,9 +45,6 @@ spec:
               platform:
                 # A manifest still on the placeholder digest is not deployed (ticket 05 pins all).
                 skipPlaceholderImages: true
-                # Ticket 03 only: no adapter hook on the per-server routes. Ticket 04 deletes this.
-                guardrails:
-                  omitProcessor: true
         - repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
           targetRevision: main
           ref: repo

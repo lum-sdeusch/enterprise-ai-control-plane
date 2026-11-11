@@ -28,6 +28,8 @@ demo.
 ## Consequences
 
 - The realm is generated from manifests (ADR 0024, 0048).
+- Tokens that user-facing clients obtain directly (LibreChat, Claude Code's public MCP client, the scenario runner) carry the user and the client in azp but no actor claim. An interactive agent's manifest lists those clients under identity.actsThrough, and the control plane resolves the agent from azp. Tokens from the delegation flow name the agent in the actor claim and need no entry. One client belongs to one agent.
+- An actor claim is authoritative. A token that names an actor without a manifest has no agent, even when it was issued to a client some agent acts through; the client's agent never stands in for an unknown actor.
 
 ## To verify at build time
 

@@ -5,9 +5,21 @@ phases of tools/call (arguments in, results out), and the response phase of the 
 so the adapter can filter by entitlement and verify the pinned hashes. FailClosed is the only
 acceptable failure mode (ADR 0010).
 
-platform.guardrails.omitProcessor drops this policy. It is off by default; only the tools
-ApplicationSet sets it, for ticket 03, which proves the gateway and identity path before the
-adapter runs. Ticket 04 removes that setting.
+The `metadata` expressions are the hook contract documented in adapter/internal/extmcp and
+exercised against a real agentgateway by test/pathway; the aggregate's policy in
+platform/charts/eacp-gateway carries the same block with prefix "always". Keep the three in
+step. What they do:
+  - jwt is the verified token's claims, the adapter's only source of identity. The Authorization
+    header never reaches the hook, and the adapter would not trust it if it did.
+  - traceparent, baggage and conversation_id carry the trace and the conversation.
+  - prefix tells the adapter whether listed names carry the aggregate's "<server>_" prefix.
+  - the three mcpGuardrails.* expressions hand the response phase what the request phase
+    stashed (tool, server, conversation); on the request phase they are unset and skipped.
+allowedRequestHeaders is set because an empty list forwards every request header.
+
+platform.guardrails.omitProcessor drops this policy. Nothing sets it; it exists to tell a
+gateway problem from an adapter problem while debugging, and it removes enforcement, so it must
+never reach a shared environment.
 */ -}}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -31,15 +43,22 @@ spec:
                 namespace: {{ .Values.platform.adapter.namespace }}
                 port: {{ .Values.platform.adapter.grpcPort }}
               failureMode: FailClosed
+              allowedRequestHeaders:
+                - traceparent
+                - baggage
+                - x-eacp-conversation-id
+              metadata:
+                jwt: jwt
+                traceparent: request.headers["traceparent"]
+                baggage: request.headers["baggage"]
+                conversation_id: request.headers["x-eacp-conversation-id"]
+                prefix: '"none"'
+                eacp_tool: mcpGuardrails.eacp_tool
+                eacp_server: mcpGuardrails.eacp_server
+                eacp_conversation_id: mcpGuardrails.eacp_conversation_id
             methods:
               tools/call: Full
               tools/list: Response
               prompts/list: Response
               resources/list: Response
-# Checked against the agentgateway 1.7 CRD (ticket 03): remote.allowedRequestHeaders and
-# remote.disallowedRequestHeaders select the headers in McpRequest.headers (empty: all headers
-# and pseudo-headers), and remote.metadata is a map of CEL expressions surfaced as
-# McpRequest.metadata_context (e.g. jwt claims, request.headers["traceparent"]). Ticket 04 sets
-# them and proves what reaches the adapter; until then the adapter reads identity from the
-# forwarded Authorization header, whose signature the gateway has already verified.
 {{- end }}

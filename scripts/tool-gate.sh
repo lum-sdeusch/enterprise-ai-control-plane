@@ -30,15 +30,22 @@ for manifest in $changed; do
   pins=$(python3 -c "import yaml,sys; d=yaml.safe_load(open(sys.argv[1]))['spec']['pins']; print(' '.join(d.values()))" "$manifest")
   transport=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['spec']['transport'])" "$manifest")
 
+  # A manifest whose image is still the bootstrap placeholder is not onboarded: the chart does
+  # not deploy it (platform.skipPlaceholderImages; only the laptop runs it, from an image built
+  # locally). There is no image to verify, scan or start, so the gate has nothing to check and
+  # says so. The pins of the demo servers built from this repository are checked against the
+  # running server by test/pathway. A real image with a placeholder pin is still an error.
   if [[ "$image" == *"$ZERO" ]]; then
-    echo "   FAIL image digest is the bootstrap placeholder"; fail=1
+    echo "   skip image digest is the bootstrap placeholder: not onboarded, nothing to gate"
+    continue
   fi
+  placeholder_pin=0
   for p in $pins; do
     if [[ "$p" == *"$ZERO" ]]; then
-      echo "   FAIL pin is the bootstrap placeholder; run scripts/pin-tools.py"; fail=1
+      echo "   FAIL pin is the bootstrap placeholder; run scripts/pin-tools.py"; fail=1; placeholder_pin=1
     fi
   done
-  [[ $fail -eq 1 ]] && continue
+  [[ $placeholder_pin -eq 1 ]] && continue
 
   if [[ "$SKIP" != *",cosign,"* ]]; then
     # Images built by this repository are verified keyless against the CI workflow identity;

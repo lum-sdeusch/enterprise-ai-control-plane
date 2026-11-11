@@ -23,4 +23,4 @@ Keycloak is never edited by hand.
 
 ## Consequences
 
-- scripts/compile-manifests.py is the only writer of policies/eacp/manifests.json, platform/keycloak/realm-import.yaml and platform/generated.
+- scripts/compile-manifests.py is the only writer of policies/eacp/data.json, platform/keycloak/realm-import.yaml and platform/generated.

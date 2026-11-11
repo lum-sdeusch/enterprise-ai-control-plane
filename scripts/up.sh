@@ -4,6 +4,7 @@
 #   PROFILE=laptop scripts/up.sh                       # what `make up` runs
 #   EACP_REVISION=my-branch scripts/up.sh              # sync every in-repo source from a branch
 #   EACP_REPO=https://github.com/me/fork.git scripts/up.sh
+#   scripts/up.sh policy                               # laptop: reload the policy bundle only
 #
 # Safe to run again: every step checks what exists before it creates anything. It returns once
 # every Application in the foundation and platform-store waves (sync wave -1 and lower) is Synced
@@ -61,12 +62,43 @@ coredns_rewrites() {
   printf '    added: %s\n' "${missing[@]}"
 }
 
-# Demo servers built on the laptop (scripts/demo-images.sh), as "<tool> <image>@<digest>" lines.
+# Images built on the laptop and loaded into kind (scripts/local-images.sh): the demo servers as
+# "<tool> <image>@<digest>" lines, and the adapter and guardrail service as
+# "adapter <image>@<digest>" and "guardrails <image>@<digest>".
 LOCAL_IMAGES=""
+PLATFORM_IMAGES=""
+# A hash of the policy sources; a new value makes the eacp-system chart roll the adapter pods,
+# because OPA reads the mounted bundle only at start.
+POLICY_CHECKSUM=""
 
 demo_images() {
   step "demo MCP server images (built locally, loaded into kind)"
-  LOCAL_IMAGES="$(scripts/demo-images.sh)"
+  LOCAL_IMAGES="$(scripts/local-images.sh tools)"
+}
+
+platform_images() {
+  step "adapter and guardrail service images (built locally, loaded into kind)"
+  PLATFORM_IMAGES="$(scripts/local-images.sh platform)"
+}
+
+# The laptop gets its policy without a registry: build the bundle from this checkout and put the
+# tarball in ConfigMap eacp-system/eacp-policy-bundle, which the adapter's OPA sidecar mounts
+# (platform/charts/eacp-system, policy.source: configmap). Rerun after changing a policy or a
+# manifest: `make policy-load`.
+policy_bundle() {
+  step "policy bundle (built from this checkout, loaded as a ConfigMap)"
+  local rev
+  rev="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+  git diff --quiet HEAD -- policies tools agents teams 2>/dev/null || rev="$rev-dirty"
+  scripts/build-bundle.sh "$rev" >/dev/null
+  POLICY_CHECKSUM="$(find policies/rego policies/eacp -type f | LC_ALL=C sort | xargs cat | openssl dgst -sha256 | awk '{print substr($NF, 1, 16)}')"
+  kubectl get namespace eacp-system >/dev/null 2>&1 || kubectl create namespace eacp-system >/dev/null
+  kubectl create configmap eacp-policy-bundle -n eacp-system \
+    --from-file=eacp-bundle.tar.gz=dist/eacp-bundle.tar.gz --dry-run=client -o yaml |
+    kubectl apply -f - >/dev/null
+  kubectl label configmap eacp-policy-bundle -n eacp-system --overwrite \
+    app.kubernetes.io/part-of=eacp eacp.dev/policy-revision="$rev" >/dev/null
+  echo "    revision $rev, checksum $POLICY_CHECKSUM"
 }
 
 install_argocd() {
@@ -142,14 +174,28 @@ local_image_patch() {
 EOF
 }
 
+# Kustomize patch that hands the locally built adapter and guardrail images, and the policy
+# checksum, to the eacp-system chart.
+platform_patch() {
+  local values
+  values="$(jq -Rnc --arg checksum "$POLICY_CHECKSUM" \
+    '[inputs | select(length > 0) | split(" ") | {(.[0]): .[1]}] | add // {} | {images: ., policy: {bundleChecksum: $checksum}}' <<<"$PLATFORM_IMAGES")"
+  cat <<EOF
+        - target: { kind: Application, name: eacp-system }
+          patch: |
+            - { op: add, path: /spec/source/helm/valuesObject, value: $values }
+EOF
+}
+
 # Every patch the root application needs; prints nothing when it needs none.
 root_patches() {
   local retarget=0
   [[ "$EACP_REPO" == "$DEFAULT_REPO" && "$EACP_REVISION" == main ]] || retarget=1
-  ((retarget)) || [[ -n "$LOCAL_IMAGES" ]] || return 0
+  ((retarget)) || [[ -n "$LOCAL_IMAGES$PLATFORM_IMAGES$POLICY_CHECKSUM" ]] || return 0
   printf '    kustomize:\n      patches:\n'
   ((retarget == 0)) || retarget_patches
   [[ -z "$LOCAL_IMAGES" ]] || local_image_patch
+  [[ -z "$PLATFORM_IMAGES$POLICY_CHECKSUM" ]] || platform_patch
 }
 
 root_app() {
@@ -259,7 +305,7 @@ summary() {
   cat <<EOF
 
 Gateway     http://gw.127.0.0.1.sslip.io:8080      (MCP at /mcp, LLM at /v1, approvals at /approvals)
-Keycloak    https://auth.127.0.0.1.sslip.io:8081  (realm eacp; demo users alice, bob, carol with password changeme-<name>)
+Keycloak    https://auth.127.0.0.1.sslip.io:8081  (realm eacp; demo users alice, bob, carol, erin with password changeme-<name>)
             signed by the laptop CA in $EACP_CA_FILE; for Claude Code: export NODE_EXTRA_CA_CERTS=$EACP_CA_FILE
 LibreChat   http://chat.127.0.0.1.sslip.io:3080
 Argo CD     http://127.0.0.1:8082                 (user admin, password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
@@ -271,13 +317,27 @@ Next: make demo
 EOF
 }
 
+# `make policy-load`: rebuild the bundle from this checkout, replace the ConfigMap and restart the
+# adapter pods so OPA loads it. The pods are deleted rather than the Deployment patched, so Argo
+# CD sees no drift to heal.
+policy_load() {
+  need kubectl; need opa; need openssl
+  policy_bundle
+  kubectl delete pod -n eacp-system -l app.kubernetes.io/name=eacp-adapter --wait=false >/dev/null 2>&1 || true
+  kubectl rollout status deployment/eacp-adapter -n eacp-system --timeout=180s
+}
+
 main() {
+  if [[ "${1:-}" == policy ]]; then policy_load; return; fi
   need kubectl; need helm; need jq; need openssl; need curl
   if [[ "$PROFILE" == laptop ]]; then
     need docker; need kind
+    need opa
     kind_cluster
     coredns_rewrites
     demo_images
+    platform_images
+    policy_bundle
   fi
   install_argocd
   if [[ "$PROFILE" == laptop ]]; then openbao_seal_key; fi

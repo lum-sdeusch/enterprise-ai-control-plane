@@ -1,4 +1,4 @@
-"""Settings from the environment. Profiles (platform/models/<profile>/guardrails-profile.yaml)
+"""Settings from the environment. Profiles (guardrails.profile in platform/charts/eacp-system/values*.yaml)
 set the model endpoints; everything else has a safe default."""
 
 from __future__ import annotations

@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -20,10 +20,11 @@ const TracerName = "github.com/lum-sdeusch/enterprise-ai-control-plane/adapter"
 // Setup installs a tracer provider exporting OTLP/gRPC to the collector and the W3C trace
 // context plus baggage propagators. endpoint empty means tracing stays local (no exporter).
 func Setup(ctx context.Context, endpoint, serviceName, version string) (func(context.Context) error, error) {
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(serviceName),
-		semconv.ServiceVersion(version),
+	// Schemaless on purpose: resource.Default() carries the SDK's own schema URL, and merging a
+	// resource with a different one fails at start-up.
+	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
+		attribute.String("service.name", serviceName),
+		attribute.String("service.version", version),
 	))
 	if err != nil {
 		return nil, err

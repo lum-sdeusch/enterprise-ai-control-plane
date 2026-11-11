@@ -1,0 +1,7 @@
+# Dependencies of the pathway test (test/pathway/run.sh).
+# fastmcp matches demo/servers/Dockerfile exactly: the manifest pins depend on it.
+fastmcp==2.14.7
+mcp>=1.19,<2
+pyjwt[crypto]>=2.8
+httpx>=0.27
+pyyaml>=6

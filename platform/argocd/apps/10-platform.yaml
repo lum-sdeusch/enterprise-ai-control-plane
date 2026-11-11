@@ -133,10 +133,6 @@ spec:
     helm:
       valueFiles:
         - values.yaml   # profile overlay patches this to values-cloud-gpu.yaml
-      valuesObject:
-        # Ticket 03 only: no adapter hook on the aggregate endpoint. Ticket 04 deletes this.
-        guardrails:
-          omitProcessor: true
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system

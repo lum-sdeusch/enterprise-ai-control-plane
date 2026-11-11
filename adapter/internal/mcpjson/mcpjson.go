@@ -190,25 +190,57 @@ func SetLeaf(root map[string]any, prefix, path, value string) {
 	}
 }
 
-// SplitName resolves the server and bare tool name for a tools/call. Through the virtual MCP
-// endpoint the gateway prefixes tool names with "<server>_"; through a per-server route it does
-// not. service_names tells us which server the call is for either way.
+// SplitName resolves the server and bare tool name for a tools/call. The gateway names the
+// backing server in service_names and has already removed the aggregate's "<server>_" prefix
+// from the name by the time the hook sees it (agentgateway 1.7); the prefix is still stripped
+// here if present, so both behaviours are handled. Without a service name there is no server.
 func SplitName(name string, serviceNames []string) (server, tool string) {
-	if len(serviceNames) > 0 {
-		server = serviceNames[0]
-		if strings.HasPrefix(name, server+"_") {
-			return server, strings.TrimPrefix(name, server+"_")
-		}
-		return server, name
+	if len(serviceNames) == 0 {
+		return "", name
 	}
-	// No service name: fall back to the first underscore.
-	if i := strings.Index(name, "_"); i > 0 {
-		return name[:i], name[i+1:]
-	}
-	return "", name
+	server = serviceNames[0]
+	return server, strings.TrimPrefix(name, server+"_")
 }
 
-// BareName strips the virtual-MCP prefix from a listed tool name.
+// BareName strips the aggregate's prefix from a listed name.
 func BareName(name, server string) string {
 	return strings.TrimPrefix(name, server+"_")
+}
+
+// ItemKey is the identifying string of a listing item: its name, or its uri for a resource
+// without one.
+func ItemKey(item map[string]any) string {
+	if s, ok := item["name"].(string); ok && s != "" {
+		return s
+	}
+	s, _ := item["uri"].(string)
+	return s
+}
+
+// PrefixOwner returns the server whose "<server>_" prefix key carries. Server names are DNS
+// labels, which cannot contain an underscore, so at most one server matches.
+func PrefixOwner(key string, servers []string) (string, bool) {
+	for _, s := range servers {
+		if strings.HasPrefix(key, s+"_") {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// Unprefixed returns copies of the items with the aggregate's "<server>_" prefix removed from
+// their names, which is the form the server itself advertises and the form that is pinned.
+func Unprefixed(items []map[string]any, server string) []map[string]any {
+	out := make([]map[string]any, len(items))
+	for i, it := range items {
+		cp := make(map[string]any, len(it))
+		for k, v := range it {
+			cp[k] = v
+		}
+		if name, ok := cp["name"].(string); ok {
+			cp["name"] = BareName(name, server)
+		}
+		out[i] = cp
+	}
+	return out
 }

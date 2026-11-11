@@ -2,7 +2,7 @@
 """Compile manifests into the artefacts derived from them.
 
 Outputs, written deterministically so CI can check they are committed and current:
-  policies/eacp/manifests.json         OPA data: data.eacp.tools / agents / teams / agent_clients
+  policies/eacp/data.json         OPA data: data.eacp.tools / agents / teams / agent_clients
   platform/keycloak/realm-import.yaml  KeycloakRealmImport with groups, clients, scopes and mappers
 
 The bundle revision is not written here; scripts/build-bundle.sh stamps it into the bundle
@@ -359,6 +359,20 @@ def _demo_users() -> list[dict]:
             "attributes": {"team": ["support"], "clearance": ["internal"]},
             "credentials": [{"type": "password", "value": "changeme-carol", "temporary": True}],
         },
+        {
+            # In no team and no group: the control for "a caller outside the required group sees
+            # none of a server's tools" (demo/scenarios/pathway.py).
+            "username": "erin",
+            "email": "erin@example.com",
+            "firstName": "Erin",
+            "lastName": "Outsider",
+            "enabled": True,
+            "emailVerified": True,
+            "groups": [],
+            "realmRoles": [DEFAULT_ROLES],
+            "attributes": {"clearance": ["internal"]},
+            "credentials": [{"type": "password", "value": "changeme-erin", "temporary": True}],
+        },
     ]
 
 
@@ -410,17 +424,19 @@ def team_namespaces(ms: ManifestSet) -> list[dict]:
                 },
             }
         )
-    froms = [
+    # Gateway policies name the adapter (the ExtMCP hook) and Keycloak (the JWKS) across
+    # namespaces: every team namespace's per-server policies, and the gateway namespace's
+    # policies for the aggregate endpoint. The agentgateway 1.7 CRD says such a reference needs
+    # a ReferenceGrant in the referent's namespace.
+    froms = [{"group": "agentgateway.dev", "kind": "AgentgatewayPolicy", "namespace": "agentgateway-system"}] + [
         {"group": "agentgateway.dev", "kind": "AgentgatewayPolicy", "namespace": m["spec"].get("namespace", f"team-{n}")}
         for n, m in sorted(ms.teams.items())
     ]
-    # TODO(verify): whether agentgateway requires ReferenceGrant for cross-namespace backendRefs
-    # in policies. Harmless if it does not.
     docs.append(
         {
             "apiVersion": "gateway.networking.k8s.io/v1beta1",
             "kind": "ReferenceGrant",
-            "metadata": {"name": "teams-to-eacp-adapter", "namespace": "eacp-system"},
+            "metadata": {"name": "gateway-policies-to-eacp-adapter", "namespace": "eacp-system"},
             "spec": {"from": froms, "to": [{"group": "", "kind": "Service", "name": "eacp-adapter"}]},
         }
     )
@@ -428,7 +444,7 @@ def team_namespaces(ms: ManifestSet) -> list[dict]:
         {
             "apiVersion": "gateway.networking.k8s.io/v1beta1",
             "kind": "ReferenceGrant",
-            "metadata": {"name": "teams-to-keycloak", "namespace": "keycloak"},
+            "metadata": {"name": "gateway-policies-to-keycloak", "namespace": "keycloak"},
             "spec": {"from": froms, "to": [{"group": "", "kind": "Service", "name": "keycloak-service"}]},
         }
     )
@@ -449,7 +465,7 @@ def main() -> int:
         "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - teams.yaml\n"
     )
 
-    data_path = ROOT / "policies" / "eacp" / "manifests.json"
+    data_path = ROOT / "policies" / "eacp" / "data.json"
     data_path.parent.mkdir(parents=True, exist_ok=True)
     data_path.write_text(json.dumps(to_opa_data(ms), indent=2, sort_keys=True) + "\n")
 

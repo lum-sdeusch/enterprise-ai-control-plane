@@ -2,8 +2,12 @@ profile: laptop
 namespace: eacp-system
 
 images:
-  # Built and signed by .github/workflows/pr.yaml. Pin by digest in a real deployment; Kyverno
-  # verifies the keyless signature on admission.
+  # The laptop profile runs images built on the laptop and loaded into kind
+  # (scripts/local-images.sh platform; scripts/up.sh passes their digest references in here).
+  # They are named eacp.local/..., outside the Kyverno verify-images scope, because nothing
+  # signed them. CI builds and scans these images but publishes and signs nothing (ADR 0046), so
+  # the registry references below are where a signed release goes once ticket 14 adds the
+  # key-based signing path.
   adapter: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/eacp-adapter:main
   guardrails: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/eacp-guardrails:main
   opa: openpolicyagent/opa:1.22.2-static
@@ -23,7 +27,16 @@ keycloak:
   adapterClientSecretPath: eacp/adapter/oauth-client
 
 policy:
-  # OPA pulls the bundle built by CI (scripts/build-bundle.sh) from the OCI registry.
+  # Where OPA gets the policy bundle (scripts/build-bundle.sh).
+  #   configmap  the bundle tarball in ConfigMap eacp-policy-bundle, mounted and loaded from
+  #              disk. scripts/up.sh builds the bundle from the checkout and creates the
+  #              ConfigMap (make policy-load to replace it). No registry involved. OPA does not
+  #              notice a changed file, so bundleChecksum below rolls the pods instead.
+  #   oci        pulled from an OCI registry and polled, the production path (ADR 0044).
+  source: configmap
+  configMapName: eacp-policy-bundle
+  # Set by scripts/up.sh to a hash of the policy sources; a new value restarts the adapter pods.
+  bundleChecksum: ""
   bundleResource: ghcr.io/lum-sdeusch/enterprise-ai-control-plane/policy-bundle:main
   registryUrl: https://ghcr.io
   pollingMinSeconds: 30
@@ -53,8 +66,23 @@ adapter:
 guardrails:
   replicas: 1
   port: 8000
-  # Filled per profile by the ConfigMap in platform/models/<profile>/guardrails-profile.yaml.
-  profileConfigMap: eacp-guardrails-profile
+  # Detector settings, rendered into ConfigMap eacp-guardrails-profile and read as environment.
+  # Laptop defaults; values-cloud-gpu.yaml overrides them.
+  #
+  # Until ticket 08 the injection guard model is off on the laptop: with EACP_GUARD_BASE_URL and
+  # EACP_GUARD_MODEL empty the service runs the secret rules and the regex PII engine only.
+  # Naming a guard that is not being served would make every call fail closed, because a
+  # configured guard is required. Ticket 08 points these at the Ollama-served Qwen3Guard-Gen
+  # (or the smaller classifier it settles on) and measures the latency budget.
+  profile:
+    EACP_PROFILE: laptop
+    EACP_GUARD_BASE_URL: ""
+    EACP_GUARD_MODEL: ""
+    EACP_GUARD_TIMEOUT_MS: "1500"
+    EACP_JUDGE_ENABLED: "false"
+    EACP_SENSITIVITY_ENABLED: "false"
+    EACP_PII_ENGINE: regex
+    EACP_PII_SCORE_THRESHOLD: "0.5"
   resources:
     requests: { cpu: 250m, memory: 1Gi }
     limits: { cpu: "2", memory: 3Gi }

@@ -271,7 +271,7 @@ func (p *Pipeline) ToolCallResponse(ctx context.Context, c Caller, server, tool 
 
 	dec, err := p.d.Policy.Decide(ctx, policy.Input{
 		Phase: "response", Subject: c.Subject, Agent: c.Agent,
-		Tool: &policy.ToolRef{Server: server, Name: tool},
+		Tool:     &policy.ToolRef{Server: server, Name: tool},
 		Findings: an.Findings, Taint: labels, Pinning: pin,
 		ConversationID: c.ConversationID, TraceID: c.TraceID,
 	})
@@ -323,7 +323,12 @@ func (p *Pipeline) ToolCallResponse(ctx context.Context, c Caller, server, tool 
 // Listing verifies the pinned hash for a */list result of one server and, for tools, filters the
 // items to what this caller may see. A hash mismatch quarantines the server and empties the
 // listing so a poisoned description never reaches the model.
-func (p *Pipeline) Listing(ctx context.Context, c Caller, server, kind string, items []map[string]any) ([]map[string]any, Outcome) {
+//
+// prefixed says the item names carry the aggregate's "<server>_" prefix. The hash is always
+// taken over the unprefixed form, the one the server itself advertises, so a pin computed
+// straight from a server (scripts/pin-tools.py) holds on every route. The gateway passes listing
+// items through unchanged otherwise (checked against agentgateway 1.7 by test/pathway).
+func (p *Pipeline) Listing(ctx context.Context, c Caller, server, kind string, items []map[string]any, prefixed bool) ([]map[string]any, Outcome) {
 	start := p.d.Now()
 	ctx, span := telemetry.Tracer().Start(ctx, "eacp.listing", trace.WithAttributes(
 		attribute.String("mcp.method.name", kind+"/list"),
@@ -333,7 +338,11 @@ func (p *Pipeline) Listing(ctx context.Context, c Caller, server, kind string, i
 	ev := p.baseEvent(ctx, c, "list")
 	ev.Server = server
 
-	hash, err := pinning.Hash(items)
+	advertised := items
+	if prefixed {
+		advertised = mcpjson.Unprefixed(items, server)
+	}
+	hash, err := pinning.Hash(advertised)
 	if err != nil {
 		return nil, p.failClosed(ctx, span, ev, start, "cannot hash listing", err)
 	}
@@ -381,9 +390,9 @@ func (p *Pipeline) Listing(ctx context.Context, c Caller, server, kind string, i
 		allowed[v] = true
 	}
 	filtered := make([]map[string]any, 0, len(items))
-	for _, it := range items {
-		name, _ := it["name"].(string)
-		if allowed[server+"/"+mcpjson.BareName(name, server)] {
+	for i, it := range items {
+		bare, _ := advertised[i]["name"].(string)
+		if allowed[server+"/"+bare] {
 			filtered = append(filtered, it)
 		}
 	}

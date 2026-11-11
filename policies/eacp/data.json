@@ -1,7 +1,10 @@
 {
   "agent_clients": {
     "agent-nightly-triage": "nightly-triage",
-    "agent-support-assistant": "support-assistant"
+    "agent-support-assistant": "support-assistant",
+    "demo-runner": "support-assistant",
+    "eacp-mcp-public": "support-assistant",
+    "librechat": "support-assistant"
   },
   "agents": {
     "nightly-triage": {
@@ -156,9 +159,9 @@
       "output_trust": "trusted",
       "owner": "support-platform@example.com",
       "pins": {
-        "prompts": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "resources": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        "prompts": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "resources": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "tools": "sha256:58a06a560fae676af8c1db408513a3632543b57decaffdbd39b766c95dc950e7"
       },
       "required_groups": [
         "support"

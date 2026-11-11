@@ -3,6 +3,7 @@
 #
 #   PROFILE=laptop scripts/e2e.sh
 #   scripts/e2e.sh --smoke          # only the gateway and identity checks (ticket 03, make smoke)
+#   scripts/e2e.sh --pathway        # only the adapter-in-the-pathway checks (ticket 04, make pathway-cluster)
 #
 # Status: skeleton. demo/scenarios/run.py implements the assertions; the two steps that need
 # out-of-band actions (redeploying the poisoned server, approving as bob) are done here.
@@ -25,6 +26,12 @@ python3 -c "import httpx; from mcp.client.streamable_http import streamablehttp_
 # The demo-runner client's secret lives in OpenBao (scripts/seed-openbao.sh).
 EACP_RUNNER_CLIENT_SECRET="${EACP_RUNNER_CLIENT_SECRET:-$(scripts/seed-openbao.sh runner-secret)}"
 export EACP_RUNNER_CLIENT_SECRET
+
+# The pathway checks read audit rows as the read-only audit user.
+if [[ " $* " == *" --pathway "* ]]; then
+  EACP_AUDIT_READER_PASSWORD="${EACP_AUDIT_READER_PASSWORD:-$(scripts/seed-openbao.sh audit-reader-password)}"
+  export EACP_AUDIT_READER_PASSWORD
+fi
 
 # TODO: scenario 1 needs the poisoned server redeployed with POISON=1 between steps 1a and 1b
 # (kubectl -n team-support set env deploy/poisoned-demo POISON=1), and scenario 5 needs bob's

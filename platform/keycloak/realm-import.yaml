@@ -449,3 +449,19 @@ spec:
       - type: password
         value: changeme-carol
         temporary: true
+    - username: erin
+      email: erin@example.com
+      firstName: Erin
+      lastName: Outsider
+      enabled: true
+      emailVerified: true
+      groups: []
+      realmRoles:
+      - default-roles-eacp
+      attributes:
+        clearance:
+        - internal
+      credentials:
+      - type: password
+        value: changeme-erin
+        temporary: true

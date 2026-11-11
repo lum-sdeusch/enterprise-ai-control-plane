@@ -17,7 +17,7 @@
       "injection": {"score": 0.03, "label": "safe", "categories": []}
     },
     "taint": {"touched_pii": true, "touched_restricted": true, "touched_untrusted_content": false},
-    "pinning": {"tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+    "pinning": {"tools": "MANIFEST_PIN"},
     "approval": {"approved": false, "approver": null, "approver_groups": []},
     "conversation_id": "conv-taint",
     "trace_id": "trace-taint"

@@ -169,7 +169,9 @@ because the roles differ and Agent Router can replace the LLM box.
 
 ### 5.3 Tool call, response phase
 1. Hook receives the result and the CEL metadata block (no headers in this phase; trace context
-   and conversation id come through metadata).
+   and conversation id come through metadata). The tool name, server and conversation id are the
+   values the request phase stashed, which the gateway exposes to the block as
+   `mcpGuardrails.<key>`. `test/pathway` holds the gateway to this contract on every pull request.
 2. Guardrails on the result: injection in untrusted content, PII, secrets.
 3. OPA post-decision: pass, redact, or deny. Taint updated: `touched_pii`, `touched_restricted`,
    `touched_untrusted_content`. Audit and span.
@@ -339,8 +341,9 @@ These were not decided in the rounds, or depend on a fact only a build can verif
    extension, not a component.
 4. **Metrics and dashboards.** Not discussed. Recommendation: Prometheus (Apache-2.0) scraping
    agentgateway and the adapter, Grafana (AGPL, standalone service, allowed) for one dashboard.
-5. **Build-time spikes:** that agentgateway's CEL metadata block can carry trace context and
-   conversation id into the response-phase hook; that LibreChat's placeholder headers can forward
+5. **Build-time spikes:** ~~that agentgateway's CEL metadata block can carry trace context and
+   conversation id into the response-phase hook~~ (confirmed against agentgateway 1.7.0 by
+   `test/pathway`; the contract is in ADR 0019 and ADR 0043); that LibreChat's placeholder headers can forward
    a per-user token on the LLM path; that Keycloak's preview delegation flow issues the `act`
    claim as expected with agentgateway's token exchange; that Qwen3Guard-Gen 0.6B meets the
    200 ms budget on a laptop CPU.

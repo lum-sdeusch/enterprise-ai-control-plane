@@ -4,4 +4,3 @@ resources:
   - namespace.yaml
   - ollama.yaml
   - inhouse-model.yaml
-  - guardrails-profile.yaml

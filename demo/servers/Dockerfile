@@ -3,7 +3,10 @@
 ARG SERVER=tickets
 FROM python:3.12-slim
 ARG SERVER
-RUN pip install --no-cache-dir "fastmcp>=2.12" && useradd --uid 10001 --create-home --shell /usr/sbin/nologin eacp
+# fastmcp is pinned exactly: it writes each tool's schema and metadata, so another version can
+# change the tools/list hash and the server would be quarantined against its manifest pin.
+# test/pathway/requirements.txt carries the same pin; change both and re-pin (scripts/pin-tools.py).
+RUN pip install --no-cache-dir "fastmcp==2.14.7" && useradd --uid 10001 --create-home --shell /usr/sbin/nologin eacp
 WORKDIR /app
 COPY ${SERVER}/server.py /app/server.py
 USER 10001

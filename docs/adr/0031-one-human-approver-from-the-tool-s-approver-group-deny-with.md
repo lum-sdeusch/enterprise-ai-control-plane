@@ -25,4 +25,6 @@ Self-approval is off unless the manifest allows it. The spec-native flow is behi
 ## Consequences
 
 - Both the request and the decision are audited with the approver's identity.
+- The deny-with-link reaches the client as the text of a tool result (see ADR 0019): a JSON object whose message names the approver group and the approval URL and whose data repeats them as approval_url and approver_group.
+- The approval page connects to Keycloak on first use, not at start-up, so the policy hook never waits on the identity provider.
 - A destructive tool after untrusted content requires approval dynamically, as the prompt-injection backstop.

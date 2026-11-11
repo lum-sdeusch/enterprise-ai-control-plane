@@ -135,6 +135,10 @@ def _cross_check(ms: ManifestSet) -> None:
                     ms.warnings.append(
                         f"agents/{name}: tool {server}/{t['name']} outputs {t['outputClassification']} which exceeds the agent ceiling {spec['maxClassification']}; it will be denied at runtime"
                     )
+        for client in spec["identity"].get("actsThrough", []):
+            owner = next((n for n, a in ms.agents.items() if n != name and (client == a["spec"]["identity"]["clientId"] or client in a["spec"]["identity"].get("actsThrough", []))), None)
+            if owner:
+                ms.errors.append(f"agents/{name}: actsThrough client '{client}' already belongs to agent '{owner}'")
         if spec["kind"] == "scheduled" and "external" in spec["allowedModelClasses"]:
             ms.warnings.append(f"agents/{name}: a scheduled agent with external model access has no human to notice a leak; reconsider")
         if spec["kind"] == "scheduled" and spec.get("image", "").endswith(PLACEHOLDER_DIGEST):
@@ -217,6 +221,10 @@ def to_opa_data(ms: ManifestSet) -> dict:
             "default_clearance": spec["defaultClearance"],
             "namespace": spec.get("namespace", f"team-{name}"),
         }
-    # client_id -> agent name, so the adapter can resolve the actor chain cheaply.
+    # client id -> agent name, so the adapter resolves the agent from the actor claim, or from
+    # the client a user-facing application logged the user in with (identity.actsThrough).
     clients = {a["client_id"]: n for n, a in agents.items()}
+    for name, m in sorted(ms.agents.items()):
+        for client in m["spec"]["identity"].get("actsThrough", []):
+            clients[client] = name
     return {"tools": tools, "agents": agents, "teams": teams, "agent_clients": clients}

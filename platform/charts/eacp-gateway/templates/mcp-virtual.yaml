@@ -96,8 +96,11 @@ spec:
         matchExpressions:
           - "has(jwt.sub)"
 ---
-# Every call through the aggregate goes to the adapter, same as the per-server routes.
-# guardrails.omitProcessor drops it (ticket 03 only; see values.yaml).
+# Every call through the aggregate goes to the adapter, same as the per-server routes. The
+# metadata block is the hook contract (adapter/internal/extmcp, charts/mcp-tool's
+# policy-guardrails.yaml, test/pathway); here prefix is "always" because the aggregate prefixes
+# listed names with the server name. guardrails.omitProcessor drops the policy (debugging only;
+# see values.yaml).
 {{- if not .Values.guardrails.omitProcessor }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -119,6 +122,19 @@ spec:
                 namespace: eacp-system
                 port: 4445
               failureMode: FailClosed
+              allowedRequestHeaders:
+                - traceparent
+                - baggage
+                - x-eacp-conversation-id
+              metadata:
+                jwt: jwt
+                traceparent: request.headers["traceparent"]
+                baggage: request.headers["baggage"]
+                conversation_id: request.headers["x-eacp-conversation-id"]
+                prefix: '"always"'
+                eacp_tool: mcpGuardrails.eacp_tool
+                eacp_server: mcpGuardrails.eacp_server
+                eacp_conversation_id: mcpGuardrails.eacp_conversation_id
             methods:
               tools/call: Full
               tools/list: Response

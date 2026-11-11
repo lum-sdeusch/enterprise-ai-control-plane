@@ -409,6 +409,10 @@
       reason: Cannot see tool results; splits the fail-closed logic across services.
   consequences:
     - adapter/internal/pipeline is the one place to read to understand enforcement order.
+    - "Verified against agentgateway 1.7.0 (ticket 04, test/pathway): the hook learns everything from metadata_context, filled by CEL expressions on the processor. The contract is documented in adapter/internal/extmcp and set identically in charts/mcp-tool, platform/charts/eacp-gateway and the pathway test."
+    - "The adapter's only identity source is the `jwt` metadata entry, the claims of the token the gateway verified. The Authorization header does not reach the hook, and the adapter no longer decodes bearer tokens at all: on a route that lacks a JWT policy it would otherwise trust a token nobody verified. Such a route gets a denial."
+    - "A denied tools/call reaches the client as a tool result with isError true whose text is the denial; the gateway drops structured error data for that method. The text is therefore a JSON object carrying eacp_code, every reason code and the conversation id. Denied listings are JSON-RPC errors with the same data."
+    - The pathway test found three defects no unit test had - an adapter that crashed at start on an OpenTelemetry schema conflict, a policy bundle that shipped without its data, and denial codes that never reached the client. It now runs in CI on every pull request.
 
 - id: 20
   title: Langfuse plus Jaeger through collector fan-out
@@ -488,6 +492,8 @@
       reason: Agent accounts are enterprise-only.
   consequences:
     - The realm is generated from manifests (ADR 0024, 0048).
+    - "Tokens that user-facing clients obtain directly (LibreChat, Claude Code's public MCP client, the scenario runner) carry the user and the client in azp but no actor claim. An interactive agent's manifest lists those clients under identity.actsThrough, and the control plane resolves the agent from azp. Tokens from the delegation flow name the agent in the actor claim and need no entry. One client belongs to one agent."
+    - "An actor claim is authoritative. A token that names an actor without a manifest has no agent, even when it was issued to a client some agent acts through; the client's agent never stands in for an unknown actor."
   verify:
     - Keycloak 26.8 feature flag names for the delegation preview and identity-assertion-jwt.
     - The service-account token exchange parameters used by demo/agent-nightly-triage.
@@ -509,7 +515,7 @@
     - option: Custom resources with an operator
       reason: Several hundred lines of controller for what a compile step does.
   consequences:
-    - scripts/compile-manifests.py is the only writer of policies/eacp/manifests.json, platform/keycloak/realm-import.yaml and platform/generated.
+    - scripts/compile-manifests.py is the only writer of policies/eacp/data.json, platform/keycloak/realm-import.yaml and platform/generated.
 
 - id: 25
   title: Helm chart expansion, Kyverno admission, Trivy pinned and verified, mcp-scanner
@@ -549,6 +555,9 @@
       reason: A warning nobody reads is not a control.
   consequences:
     - The Go adapter and the Python pin script share a canonical form and a test vector so they can never disagree.
+    - "The pin is the hash of the items exactly as the server sends them, taken by raw JSON-RPC rather than through an MCP SDK, which reshapes items into its own models. agentgateway 1.7 passes listing items through unchanged, so that is what the adapter sees; on the aggregate endpoint it first removes the \"<server>_\" prefix from names, so one pin holds on every route (ticket 04)."
+    - A server framework writes each tool's schema and metadata, so another framework version can change the hash. The demo servers pin their framework version exactly, and test/pathway checks the manifest pins against the running server on every run.
+    - A server that is listed behind the aggregate but has no manifest is hidden and uncallable, not quarantined.
 
 - id: 27
   title: Conversation id from baggage, subject-and-agent fallback, state in Valkey
@@ -640,6 +649,8 @@
       reason: Would fail on stage with the chosen chat UI.
   consequences:
     - Both the request and the decision are audited with the approver's identity.
+    - "The deny-with-link reaches the client as the text of a tool result (see ADR 0019): a JSON object whose message names the approver group and the approval URL and whose data repeats them as approval_url and approver_group."
+    - The approval page connects to Keycloak on first use, not at start-up, so the policy hook never waits on the identity provider.
     - A destructive tool after untrusted content requires approval dynamically, as the prompt-injection backstop.
 
 - id: 32
@@ -798,8 +809,10 @@
     the request headers and, on the response phase, from the metadata block, adding child spans
     for guardrails, policy, taint and audit. Langfuse groups by conversation id. Every audit
     record stores the trace id. Everything is sampled in the POC.
-  verify:
-    - The AgentgatewayPolicy field that fills McpResponse.metadata_context from CEL, including the stashed tool name and conversation id.
+  consequences:
+    - "Answered in ticket 04 against agentgateway 1.7.0: the processor's metadata map (CRD remote.metadata) is evaluated on both phases. What the request phase returns in McpRequestResult.metadata is readable afterwards as mcpGuardrails.<key>, so expressions such as mcpGuardrails.eacp_tool hand the tool name, server and resolved conversation id to the response phase. No correlation fallback is needed, and none is implemented: a response phase without the stashed tool name is denied."
+    - "The traceparent the gateway exposes in CEL (request.headers) already carries the gateway's own span id, and with tracing enabled the gateway also sends a traceparent on the gRPC call to the hook. The adapter prefers the latter, so its spans sit under the gateway's policy-call span. test/pathway asserts one trace per call with the adapter's request and response spans under a gateway span."
+    - A tool's own error result (isError true) still passes through the response phase; only protocol-level errors skip it.
 
 - id: 44
   title: Layered policy repository, one decision document, fixtures per threat, signed bundles
@@ -813,6 +826,9 @@
     carry the git revision, which appears in every audit record through data.system.bundles.
   consequences:
     - Forty policy unit tests run in CI against the six fixtures and their variants.
+    - "Policy data files are named data.json (eacp/data.json, eacp/config/data.json). An OPA bundle loads no other file name, while `opa test` on the directory loads any; under the old names the bundle shipped empty and every decision would have failed in the cluster. scripts/build-bundle.sh now asks the built bundle for its data and runs the unit tests against the unpacked bundle."
+    - "The laptop profile gets its bundle without a registry: scripts/up.sh builds it from the checkout into ConfigMap eacp-policy-bundle, and the OPA sidecar loads the tarball from the mount through the bundle plugin, so the revision still reaches data.system.bundles. OPA does not reload a changed file, so a policy change rolls the adapter pods (make policy-load). The OCI registry remains the production source."
+    - Test fixtures name the manifest's pin symbolically, so re-pinning a tool does not touch the tests.
 
 - id: 45
   title: Token budgets enforced, currency reported

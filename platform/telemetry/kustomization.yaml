@@ -7,3 +7,10 @@ resources:
 # The Helm-chart components (otel-collector, jaeger, langfuse, seaweedfs) are separate Argo CD
 # Applications in platform/argocd/apps/10-platform.yaml and take their values from the
 # *-values.yaml files in this directory.
+# The ClickHouse schema and users. A generated ConfigMap (name suffixed with a content hash, which
+# kustomize also writes into the StatefulSet's volume reference).
+configMapGenerator:
+  - name: clickhouse-init
+    namespace: telemetry
+    files:
+      - init.sh=clickhouse-init.sh

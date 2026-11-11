@@ -17,7 +17,7 @@
       "injection": {"score": 0.93, "label": "unsafe", "categories": ["Jailbreak"]}
     },
     "taint": {"touched_pii": false, "touched_restricted": false, "touched_untrusted_content": false},
-    "pinning": {"tools": "sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+    "pinning": {"tools": "MANIFEST_PIN"},
     "approval": {"approved": false, "approver": null, "approver_groups": []},
     "conversation_id": "conv-injection",
     "trace_id": "trace-injection"

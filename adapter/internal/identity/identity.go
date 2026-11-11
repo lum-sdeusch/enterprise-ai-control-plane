@@ -1,14 +1,10 @@
 // Package identity turns what the gateway tells us about the caller into the subject the policy
-// reasons about. The gateway has already verified the token's signature, issuer and audience;
-// this package only reads claims, it never trusts them from an unverified source.
+// reasons about. The gateway has already verified the token's signature, issuer and audience and
+// hands over the claims; this package only reads them. It has no way to decode a token on its
+// own, on purpose: a token that reaches the adapter by any other road was verified by nobody.
 package identity
 
-import (
-	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"strings"
-)
+import "strings"
 
 type Actor struct {
 	ClientID string `json:"client_id,omitempty"`
@@ -50,29 +46,6 @@ func FromClaims(claims map[string]any) Subject {
 	return s
 }
 
-// ClaimsFromBearer decodes the payload of a JWT from an Authorization header WITHOUT verifying
-// it. It is only valid to call this for tokens the gateway has already verified (the hook runs
-// behind jwtAuthentication in Strict mode). Never use it on anything a client sent directly.
-func ClaimsFromBearer(authorization string) (map[string]any, error) {
-	const prefix = "bearer "
-	if len(authorization) < len(prefix) || !strings.EqualFold(authorization[:len(prefix)], prefix) {
-		return nil, errors.New("not a bearer token")
-	}
-	parts := strings.Split(strings.TrimSpace(authorization[len(prefix):]), ".")
-	if len(parts) != 3 {
-		return nil, errors.New("malformed JWT")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, err
-	}
-	return claims, nil
-}
-
 // FromHeaders builds a Subject from the x-eacp-* headers the gateway's CEL config attaches to
 // LLM webhook and callout requests (platform/charts/eacp-gateway).
 func FromHeaders(get func(string) string) Subject {
@@ -89,18 +62,16 @@ func FromHeaders(get func(string) string) Subject {
 	return s
 }
 
-// AgentOf resolves the agent manifest name for a subject: the actor's client id first (an
-// interactive agent acting for a user), then the token's own client id (a scheduled agent).
+// AgentOf resolves the agent manifest name for a subject. A token with an actor claim speaks for
+// that actor and nothing else: an actor without a manifest is no agent, even when the token was
+// issued to a client some agent acts through. Without an actor claim the agent is the one the
+// token's own client belongs to (a scheduled agent's client, or a user-facing client listed in
+// an interactive agent's identity.actsThrough).
 func AgentOf(s Subject, agentClients map[string]string) string {
 	if s.Act != nil && s.Act.ClientID != "" {
-		if a, ok := agentClients[s.Act.ClientID]; ok {
-			return a
-		}
+		return agentClients[s.Act.ClientID]
 	}
-	if a, ok := agentClients[s.ClientID]; ok {
-		return a
-	}
-	return ""
+	return agentClients[s.ClientID]
 }
 
 // ActorChain renders "user -> agent" for audit records.

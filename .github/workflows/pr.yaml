@@ -27,7 +27,7 @@ jobs:
       - run: python scripts/compile-manifests.py
       - run: python scripts/sync-chart-schema.py
       - name: Fail if generated files are stale in the PR
-        run: git diff --exit-code -- policies/eacp/manifests.json platform/keycloak/realm-import.yaml platform/generated/ charts/mcp-tool/values.schema.json
+        run: git diff --exit-code -- policies/eacp/data.json platform/keycloak/realm-import.yaml platform/generated/ charts/mcp-tool/values.schema.json
 
   policies:
     name: OPA format, check and test
@@ -125,6 +125,36 @@ jobs:
           exit-code: "1"
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+
+  # The contract everything else rests on: the real agentgateway in front of the real adapter,
+  # OPA, the guardrail service and the tickets server, plus ClickHouse with the cluster's schema
+  # and grants. No Kubernetes. Catches what unit tests cannot: what the gateway actually sends to
+  # the hook, how a denial reaches a client, an adapter that does not start.
+  pathway:
+    name: Adapter behind a real agentgateway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: adapter/go.mod
+          cache-dependency-path: adapter/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: ${{ env.OPA_VERSION }}
+      - run: pip install -r test/pathway/requirements.txt -e guardrails
+      - run: test/pathway/run.sh --clickhouse
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pathway-logs
+          path: |
+            dist/pathway/*.log
+            dist/pathway/*.jsonl
+            dist/pathway/gateway.yaml
 
   # Tool onboarding gate: for every changed tool manifest, verify the image signature, scan the
   # image, scan the tool descriptions with mcp-scanner and check the pinned hash.

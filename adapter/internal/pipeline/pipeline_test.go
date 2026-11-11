@@ -30,7 +30,9 @@ func (f *fakePolicy) Decide(_ context.Context, in policy.Input) (*policy.Decisio
 	f.inputs = append(f.inputs, in)
 	return f.decide(in)
 }
-func (f *fakePolicy) VisibleTools(context.Context, policy.Input) ([]string, error) { return f.visible, nil }
+func (f *fakePolicy) VisibleTools(context.Context, policy.Input) ([]string, error) {
+	return f.visible, nil
+}
 func (f *fakePolicy) PinnedHash(_ context.Context, server, kind string) (string, error) {
 	h, ok := f.pins[server+"/"+kind]
 	if !ok {
@@ -189,7 +191,7 @@ func TestListingMismatchQuarantinesAndEmptiesListing(t *testing.T) {
 	pol := &fakePolicy{decide: func(policy.Input) (*policy.Decision, error) { return allow(), nil }, pins: map[string]string{"poisoned-demo/tools": "sha256:pinned"}, visible: []string{"poisoned-demo/summarize"}}
 	p, _, ts, _ := newTestPipeline(t, pol, &fakeGuardrails{})
 	c := p.Resolve(context.Background(), alice(), "conv-1")
-	items, out := p.Listing(context.Background(), c, "poisoned-demo", "tools", []map[string]any{{"name": "poisoned-demo_summarize", "description": "changed"}})
+	items, out := p.Listing(context.Background(), c, "poisoned-demo", "tools", []map[string]any{{"name": "poisoned-demo_summarize", "description": "changed"}}, true)
 	if len(items) != 0 || out.Code != "server_quarantined" {
 		t.Fatalf("items=%d code=%s", len(items), out.Code)
 	}
@@ -205,12 +207,13 @@ func TestListingMismatchQuarantinesAndEmptiesListing(t *testing.T) {
 
 func TestListingFiltersToVisibleToolsAndLiftsQuarantineOnMatch(t *testing.T) {
 	items := []map[string]any{{"name": "tickets_list_tickets", "description": "a"}, {"name": "tickets_close_ticket", "description": "b"}}
-	hash := mustHash(t, items)
+	// The pin is taken from the server directly, where names carry no aggregate prefix.
+	hash := mustHash(t, []map[string]any{{"name": "list_tickets", "description": "a"}, {"name": "close_ticket", "description": "b"}})
 	pol := &fakePolicy{decide: func(policy.Input) (*policy.Decision, error) { return allow(), nil }, pins: map[string]string{"tickets/tools": hash}, visible: []string{"tickets/list_tickets"}}
 	p, _, ts, _ := newTestPipeline(t, pol, &fakeGuardrails{})
 	_ = ts.Quarantine(context.Background(), "tickets", "old")
 	c := p.Resolve(context.Background(), alice(), "conv-1")
-	got, out := p.Listing(context.Background(), c, "tickets", "tools", items)
+	got, out := p.Listing(context.Background(), c, "tickets", "tools", items, true)
 	if out.Action != Mutate || len(got) != 1 || got[0]["name"] != "tickets_list_tickets" {
 		t.Fatalf("got %v (%s)", got, out.Reason)
 	}
@@ -379,6 +382,42 @@ func TestGuardLLMRequestRejectsAndMasks(t *testing.T) {
 	act = p2.GuardLLMRequest(context.Background(), c, "eacp-auto", []Message{{Role: "user", Content: "AKIA..."}})
 	if act.Type != "reject" || act.Status != 403 {
 		t.Fatalf("expected reject 403, got %+v", act)
+	}
+}
+
+func TestOnePinHoldsOnThePerServerRouteAndTheAggregate(t *testing.T) {
+	direct := []map[string]any{{"name": "list_tickets", "description": "a", "inputSchema": map[string]any{"type": "object"}}}
+	viaAggregate := []map[string]any{{"name": "tickets_list_tickets", "description": "a", "inputSchema": map[string]any{"type": "object"}}}
+	pol := &fakePolicy{decide: func(policy.Input) (*policy.Decision, error) { return allow(), nil }, pins: map[string]string{"tickets/tools": mustHash(t, direct)}, visible: []string{"tickets/list_tickets"}}
+	p, _, ts, _ := newTestPipeline(t, pol, &fakeGuardrails{})
+	c := p.Resolve(context.Background(), alice(), "conv-1")
+
+	got, out := p.Listing(context.Background(), c, "tickets", "tools", direct, false)
+	if out.Action == Deny || len(got) != 1 || got[0]["name"] != "list_tickets" {
+		t.Fatalf("per-server route: %v (%s %s)", got, out.Code, out.Reason)
+	}
+	got, out = p.Listing(context.Background(), c, "tickets", "tools", viaAggregate, true)
+	if out.Action == Deny || len(got) != 1 || got[0]["name"] != "tickets_list_tickets" {
+		t.Fatalf("aggregate: the listed name must keep its prefix: %v (%s %s)", got, out.Code, out.Reason)
+	}
+	if _, q, _ := ts.Quarantined(context.Background(), "tickets"); q {
+		t.Fatal("the aggregate's prefix must not look like a changed tool")
+	}
+}
+
+func TestServerWithoutManifestIsInvisible(t *testing.T) {
+	pol := &fakePolicy{decide: func(policy.Input) (*policy.Decision, error) { return allow(), nil }, pins: map[string]string{}}
+	p, aud, ts, _ := newTestPipeline(t, pol, &fakeGuardrails{})
+	c := p.Resolve(context.Background(), alice(), "conv-1")
+	got, out := p.Listing(context.Background(), c, "notes", "tools", []map[string]any{{"name": "notes_read_note"}}, true)
+	if len(got) != 0 || out.Code != "unknown_server" {
+		t.Fatalf("got %v %s", got, out.Code)
+	}
+	if _, q, _ := ts.Quarantined(context.Background(), "notes"); q {
+		t.Fatal("a server nobody onboarded is hidden, not quarantined")
+	}
+	if aud.events[0].Decision != "deny" {
+		t.Fatalf("audit = %+v", aud.events[0])
 	}
 }
 

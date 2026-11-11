@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -34,6 +35,7 @@ type Web struct {
 	Audit    audit.Writer
 	Log      *slog.Logger
 	Now      func() time.Time
+	mu       sync.Mutex
 	verifier *oidc.IDTokenVerifier
 	oauth    *oauth2.Config
 	key      []byte
@@ -45,7 +47,7 @@ type session struct {
 	Exp    int64    `json:"exp"`
 }
 
-func NewWeb(ctx context.Context, cfg config.Config, store Store, aud audit.Writer, log *slog.Logger) (*Web, error) {
+func NewWeb(cfg config.Config, store Store, aud audit.Writer, log *slog.Logger) (*Web, error) {
 	w := &Web{Store: store, Cfg: cfg, Audit: aud, Log: log, Now: time.Now}
 	if cfg.CookieSecret != "" {
 		w.key = []byte(cfg.CookieSecret)
@@ -56,22 +58,39 @@ func NewWeb(ctx context.Context, cfg config.Config, store Store, aud audit.Write
 		}
 	}
 	if cfg.OIDCIssuer == "" {
-		log.Warn("approvals: EACP_OIDC_ISSUER not set; approval page will refuse to serve")
-		return w, nil
+		log.Warn("approvals: EACP_OIDC_ISSUER not set; the approval page will refuse to serve")
 	}
-	// Discovery goes to the in-cluster Keycloak URL while the issuer stays the public one.
+	return w, nil
+}
+
+// ensure connects to the identity provider on first use. Not at start-up: the policy hook must
+// come up, and stay up, whether or not Keycloak is reachable; only the approval page needs it.
+func (w *Web) ensure() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.oauth != nil {
+		return nil
+	}
+	cfg := w.Cfg
+	if cfg.OIDCIssuer == "" {
+		return errors.New("approvals are not configured (EACP_OIDC_ISSUER)")
+	}
+	// The provider keeps this context for fetching signing keys later, so it must outlive any
+	// one request. Discovery goes to the in-cluster Keycloak URL while the issuer stays the
+	// public one.
+	ctx := context.Background()
 	discovery := cfg.OIDCIssuer
 	if cfg.OIDCInternalURL != "" {
 		u, err := url.Parse(cfg.OIDCIssuer)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		discovery = strings.TrimRight(cfg.OIDCInternalURL, "/") + u.Path
 		ctx = oidc.InsecureIssuerURLContext(ctx, cfg.OIDCIssuer)
 	}
 	provider, err := oidc.NewProvider(ctx, discovery)
 	if err != nil {
-		return nil, fmt.Errorf("approvals: oidc discovery: %w", err)
+		return fmt.Errorf("approvals: oidc discovery: %w", err)
 	}
 	endpoint := provider.Endpoint()
 	// The browser must reach the public authorization endpoint.
@@ -82,7 +101,7 @@ func NewWeb(ctx context.Context, cfg config.Config, store Store, aud audit.Write
 		RedirectURL: strings.TrimRight(cfg.PublicURL, "/") + "/approvals/callback",
 		Scopes:      []string{oidc.ScopeOpenID, "profile", "email"},
 	}
-	return w, nil
+	return nil
 }
 
 func (w *Web) Register(mux *http.ServeMux) {
@@ -155,8 +174,9 @@ func (w *Web) decide(rw http.ResponseWriter, r *http.Request) {
 // --- OIDC login -----------------------------------------------------------------------------------
 
 func (w *Web) login(rw http.ResponseWriter, r *http.Request, returnTo string) {
-	if w.oauth == nil {
-		http.Error(rw, "approvals are not configured (EACP_OIDC_ISSUER)", http.StatusServiceUnavailable)
+	if err := w.ensure(); err != nil {
+		w.Log.Warn("approval page unavailable", "err", err)
+		http.Error(rw, "the approval page cannot reach the identity provider; try again shortly", http.StatusServiceUnavailable)
 		return
 	}
 	state := base64.RawURLEncoding.EncodeToString([]byte(returnTo))
@@ -165,8 +185,8 @@ func (w *Web) login(rw http.ResponseWriter, r *http.Request, returnTo string) {
 }
 
 func (w *Web) callback(rw http.ResponseWriter, r *http.Request) {
-	if w.oauth == nil {
-		http.Error(rw, "approvals are not configured", http.StatusServiceUnavailable)
+	if err := w.ensure(); err != nil {
+		http.Error(rw, "the approval page cannot reach the identity provider; try again shortly", http.StatusServiceUnavailable)
 		return
 	}
 	state := r.URL.Query().Get("state")

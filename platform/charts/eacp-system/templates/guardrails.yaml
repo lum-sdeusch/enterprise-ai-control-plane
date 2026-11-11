@@ -1,3 +1,17 @@
+# Detector settings per profile (values: guardrails.profile).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eacp-guardrails-profile
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: eacp-guardrails
+    app.kubernetes.io/part-of: eacp
+data:
+  {{- range $k, $v := .Values.guardrails.profile }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,6 +30,8 @@ spec:
       labels:
         app.kubernetes.io/name: eacp-guardrails
         app.kubernetes.io/part-of: eacp
+      annotations:
+        checksum/profile: {{ .Values.guardrails.profile | toJson | sha256sum | trunc 16 | quote }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -36,9 +52,8 @@ spec:
             - name: http
               containerPort: {{ .Values.guardrails.port }}
           envFrom:
-            # Model endpoints and names differ per profile: platform/models/<profile>/guardrails-profile.yaml
             - configMapRef:
-                name: {{ .Values.guardrails.profileConfigMap }}
+                name: eacp-guardrails-profile
           env:
             - name: EACP_GUARDRAILS_PORT
               value: {{ .Values.guardrails.port | quote }}

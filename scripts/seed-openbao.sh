@@ -164,7 +164,8 @@ main() {
     keycloak) seed_keycloak ;;
     all) seed_secrets; seed_keycloak ;;
     runner-secret) login; field eacp/demo/runner-client client-secret ;;
-    *) echo "usage: $0 [secrets|keycloak|all|runner-secret]"; exit 2 ;;
+    audit-reader-password) login; field eacp/telemetry/clickhouse audit-reader-password ;;
+    *) echo "usage: $0 [secrets|keycloak|all|runner-secret|audit-reader-password]"; exit 2 ;;
   esac
 }
 

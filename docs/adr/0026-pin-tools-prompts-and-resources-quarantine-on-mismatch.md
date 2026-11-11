@@ -23,3 +23,6 @@ quarantine.
 ## Consequences
 
 - The Go adapter and the Python pin script share a canonical form and a test vector so they can never disagree.
+- The pin is the hash of the items exactly as the server sends them, taken by raw JSON-RPC rather than through an MCP SDK, which reshapes items into its own models. agentgateway 1.7 passes listing items through unchanged, so that is what the adapter sees; on the aggregate endpoint it first removes the "<server>_" prefix from names, so one pin holds on every route (ticket 04).
+- A server framework writes each tool's schema and metadata, so another framework version can change the hash. The demo servers pin their framework version exactly, and test/pathway checks the manifest pins against the running server on every run.
+- A server that is listed behind the aggregate but has no manifest is hidden and uncallable, not quarantined.

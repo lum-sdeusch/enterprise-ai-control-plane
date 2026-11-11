@@ -1,0 +1,136 @@
+# agentgateway standalone configuration for the pathway test. It mirrors what the charts render
+# for the cluster: a per-server route (/mcp/tickets), the aggregate (/mcp) with always-prefixed
+# tool names, JWT validation with the MCP audience, and the ExtMCP hook on every tools/call and
+# listing, failing closed.
+#
+# The hook settings under `mcpGuardrails` are the standalone spelling of the CRD fields the
+# charts set (remote.metadata, remote.allowedRequestHeaders, methods). The metadata expressions
+# are the contract documented in adapter/internal/extmcp; keep all three in step.
+config:
+  enableIpv6: false
+  adminAddr: "127.0.0.1:__ADMIN_PORT__"
+  statsAddr: "off"
+  readinessAddr: "127.0.0.1:__READY_PORT__"
+frontendPolicies:
+  accessLog:
+    add:
+      eacp.subject: 'has(jwt.sub) ? jwt.sub : ""'
+      mcp.guardrail_decision: 'mcpGuardrails != null ? string(mcpGuardrails.decision) : ""'
+  tracing:
+    host: "127.0.0.1:__OTLP_PORT__"
+    randomSampling: true
+binds:
+- port: __GATEWAY_PORT__
+  listeners:
+  - routes:
+    # Per-server route: one target, tool names as the server advertises them.
+    - name: tickets
+      matches:
+      - path: { pathPrefix: /mcp/tickets }
+      backends:
+      - mcp:
+          targets:
+          - name: tickets
+            mcp: { host: "http://127.0.0.1:__TICKETS_PORT__/mcp" }
+      policies:
+        mcpAuthentication:
+          mode: strict
+          issuer: "__ISSUER__"
+          audiences: ["eacp-mcp"]
+          jwks: { file: "__JWKS__" }
+          resourceMetadata:
+            resource: "http://127.0.0.1:__GATEWAY_PORT__/mcp/tickets"
+            authorizationServers: ["__ISSUER__"]
+        mcpGuardrails:
+          processors:
+          - kind: remote
+            host: "127.0.0.1:__HOOK_PORT__"
+            failureMode: failClosed
+            requestHeaders:
+              # An empty list would forward every header. The adapter reads metadata, so allow
+              # only what is harmless and useful as a fallback.
+              allowed: [traceparent, baggage, x-eacp-conversation-id]
+            metadata:
+              jwt: 'jwt'
+              traceparent: 'request.headers["traceparent"]'
+              baggage: 'request.headers["baggage"]'
+              conversation_id: 'request.headers["x-eacp-conversation-id"]'
+              prefix: '"none"'
+              eacp_tool: 'mcpGuardrails.eacp_tool'
+              eacp_server: 'mcpGuardrails.eacp_server'
+              eacp_conversation_id: 'mcpGuardrails.eacp_conversation_id'
+            methods:
+              "tools/call": full
+              "tools/list": response
+              "prompts/list": response
+              "resources/list": response
+    # Aggregate: every server behind one endpoint, names prefixed "<server>_". The notes server
+    # has no manifest; it must stay invisible and uncallable.
+    - name: aggregate
+      matches:
+      - path: { exact: /mcp }
+      backends:
+      - mcp:
+          prefixMode: always
+          targets:
+          - name: tickets
+            mcp: { host: "http://127.0.0.1:__TICKETS_PORT__/mcp" }
+          - name: notes
+            mcp: { host: "http://127.0.0.1:__NOTES_PORT__/mcp" }
+      policies:
+        mcpAuthentication:
+          mode: strict
+          issuer: "__ISSUER__"
+          audiences: ["eacp-mcp"]
+          jwks: { file: "__JWKS__" }
+          resourceMetadata:
+            resource: "http://127.0.0.1:__GATEWAY_PORT__/mcp"
+            authorizationServers: ["__ISSUER__"]
+        mcpGuardrails:
+          processors:
+          - kind: remote
+            host: "127.0.0.1:__HOOK_PORT__"
+            failureMode: failClosed
+            requestHeaders:
+              allowed: [traceparent, baggage, x-eacp-conversation-id]
+            metadata:
+              jwt: 'jwt'
+              traceparent: 'request.headers["traceparent"]'
+              baggage: 'request.headers["baggage"]'
+              conversation_id: 'request.headers["x-eacp-conversation-id"]'
+              prefix: '"always"'
+              eacp_tool: 'mcpGuardrails.eacp_tool'
+              eacp_server: 'mcpGuardrails.eacp_server'
+              eacp_conversation_id: 'mcpGuardrails.eacp_conversation_id'
+            methods:
+              "tools/call": full
+              "tools/list": response
+              "prompts/list": response
+              "resources/list": response
+    # A route that forgot its JWT policy but still calls the hook, and forwards the Authorization
+    # header. The adapter must refuse it: a token nobody verified is not an identity.
+    - name: unauthenticated
+      matches:
+      - path: { pathPrefix: /open/tickets }
+      backends:
+      - mcp:
+          targets:
+          - name: tickets
+            mcp: { host: "http://127.0.0.1:__TICKETS_PORT__/mcp" }
+      policies:
+        mcpGuardrails:
+          processors:
+          - kind: remote
+            host: "127.0.0.1:__HOOK_PORT__"
+            failureMode: failClosed
+            requestHeaders:
+              allowed: [authorization, traceparent, baggage, x-eacp-conversation-id]
+            metadata:
+              jwt: 'jwt'
+              prefix: '"none"'
+              eacp_tool: 'mcpGuardrails.eacp_tool'
+              eacp_server: 'mcpGuardrails.eacp_server'
+              eacp_conversation_id: 'mcpGuardrails.eacp_conversation_id'
+            methods:
+              "tools/call": full
+              "tools/list": response

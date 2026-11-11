@@ -10,6 +10,7 @@ metadata:
   namespace: {{ .Values.namespace }}
 data:
   opa.yaml: |
+    {{- if eq .Values.policy.source "oci" }}
     services:
       registry:
         url: {{ .Values.policy.registryUrl }}
@@ -21,10 +22,18 @@ data:
         polling:
           min_delay_seconds: {{ .Values.policy.pollingMinSeconds }}
           max_delay_seconds: {{ .Values.policy.pollingMaxSeconds }}
-        # TODO(sign): verify the bundle signature once CI signs it (scripts/build-bundle.sh).
+        # TODO(sign): verify the bundle signature once it is signed (ticket 14).
         # signing:
         #   keyid: eacp-ci
         #   scope: read
+    {{- else }}
+    # The bundle tarball from ConfigMap {{ .Values.policy.configMapName }}. Loaded through the
+    # bundle plugin, not `opa run -b`, so data.system.bundles carries the revision that ends up
+    # in every audit row. Checked by test/pathway, which loads its bundle the same way.
+    bundles:
+      eacp:
+        resource: file:///policy/eacp-bundle.tar.gz
+    {{- end }}
     decision_logs:
       console: true
       # Masks tool arguments, result text and raw findings before the decision is logged; the
@@ -57,6 +66,10 @@ spec:
       labels:
         app.kubernetes.io/name: eacp-adapter
         app.kubernetes.io/part-of: eacp
+      annotations:
+        # OPA reads its configuration and, in configmap mode, the bundle once at start.
+        checksum/opa-config: {{ printf "%s|%s|%s" .Values.policy.source .Values.policy.bundleResource .Values.policy.configMapName | sha256sum | trunc 16 | quote }}
+        eacp.dev/policy-bundle-checksum: {{ .Values.policy.bundleChecksum | quote }}
     spec:
       serviceAccountName: eacp-adapter
       automountServiceAccountToken: false
@@ -159,6 +172,11 @@ spec:
               readOnly: true
             - name: opa-tmp
               mountPath: /tmp
+            {{- if ne .Values.policy.source "oci" }}
+            - name: policy-bundle
+              mountPath: /policy
+              readOnly: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health?bundles
@@ -174,6 +192,11 @@ spec:
             name: opa-config
         - name: opa-tmp
           emptyDir: {}
+        {{- if ne .Values.policy.source "oci" }}
+        - name: policy-bundle
+          configMap:
+            name: {{ .Values.policy.configMapName }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

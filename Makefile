@@ -125,9 +125,25 @@ e2e: ## Run the six demo scenarios against a running cluster (skeleton)
 smoke: ## Gateway and identity smoke test: tickets via its own route and the aggregate, OAuth audiences
 	PROFILE=$(PROFILE) scripts/e2e.sh --smoke
 
+.PHONY: pathway-cluster
+pathway-cluster: ## Adapter-in-the-pathway checks on the running cluster: listings, denials, audit rows, trace, fail-closed
+	PROFILE=$(PROFILE) scripts/e2e.sh --pathway
+
 .PHONY: demo-images
 demo-images: ## Build the demo MCP servers and load them into the kind cluster (rerun make up to deploy)
-	scripts/demo-images.sh
+	scripts/local-images.sh tools
+
+.PHONY: policy-load
+policy-load: ## Laptop: rebuild the policy bundle from this checkout and load it into the running cluster
+	PROFILE=$(PROFILE) scripts/up.sh policy
+
+.PHONY: pathway
+pathway: ## The adapter behind a real agentgateway, without Kubernetes (needs Docker or EACP_AGENTGATEWAY)
+	EACP_PYTHON=$(PY) test/pathway/run.sh
+
+.PHONY: pathway-probe
+pathway-probe: ## Print exactly what agentgateway sends to the policy hook on each phase
+	EACP_PYTHON=$(PY) test/pathway/run.sh --probe
 
 .PHONY: demo
 demo: e2e ## Alias for e2e

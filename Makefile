@@ -129,6 +129,10 @@ smoke: ## Gateway and identity smoke test: tickets via its own route and the agg
 pathway-cluster: ## Adapter-in-the-pathway checks on the running cluster: listings, denials, audit rows, trace, fail-closed
 	PROFILE=$(PROFILE) scripts/e2e.sh --pathway
 
+.PHONY: diagnose
+diagnose: ## Collect cluster state (Applications, pods, events, logs) into .eacp/diagnose.txt
+	scripts/diagnose.sh
+
 .PHONY: demo-images
 demo-images: ## Build the demo MCP servers and load them into the kind cluster (rerun make up to deploy)
 	scripts/local-images.sh tools

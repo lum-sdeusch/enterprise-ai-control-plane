@@ -163,6 +163,10 @@ spec:
             - run
             - --server
             - --addr=127.0.0.1:8181
+            # Health only, for the kubelet. The API stays on the pod's loopback: a probe cannot
+            # name 127.0.0.1 as its host (it would reach the node, and the restricted pod
+            # security policy rejects it).
+            - --diagnostic-addr=0.0.0.0:8282
             - --config-file=/config/opa.yaml
             - --log-level=info
             - --log-format=json
@@ -180,8 +184,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health?bundles
-              port: 8181
-              host: 127.0.0.1
+              port: 8282
             periodSeconds: 5
           resources:
             requests: { cpu: 50m, memory: 64Mi }

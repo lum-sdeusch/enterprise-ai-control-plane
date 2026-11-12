@@ -4,8 +4,8 @@
 mode: deployment
 image:
   repository: otel/opentelemetry-collector-contrib
-  # TODO(pin): pin by digest; contrib v0.164.x verified on 2026-11-06.
-  tag: "0.164.1"
+  # TODO(pin): pin by digest. 0.164.0 is the tag that exists on Docker Hub (0.164.1 does not).
+  tag: "0.164.0"
 replicaCount: 1
 fullnameOverride: otel-collector
 resources:
@@ -22,11 +22,14 @@ extraEnvs:
       secretKeyRef:
         name: langfuse-otlp
         key: basic-auth   # base64(public_key:secret_key), delivered by External Secrets Operator
+        # Langfuse and this Secret arrive with ticket 12; until then the collector starts
+        # without it and only the Langfuse exporter fails.
+        optional: true
   - name: CLICKHOUSE_LOGS_PASSWORD
     valueFrom:
       secretKeyRef:
-        name: clickhouse-logs-writer
-        key: password
+        name: clickhouse-users   # the same Secret ClickHouse creates the logs_writer user from
+        key: logs-writer-password
 config:
   receivers:
     otlp:
@@ -65,7 +68,7 @@ config:
           - 'attributes["gen_ai.operation.name"] == nil and attributes["mcp.method.name"] == nil and attributes["eacp.policy.decision"] == nil'
   exporters:
     otlp/jaeger:
-      endpoint: jaeger-collector.telemetry.svc.cluster.local:4317
+      endpoint: jaeger.telemetry.svc.cluster.local:4317   # the all-in-one Service
       tls:
         insecure: true
     otlphttp/langfuse:

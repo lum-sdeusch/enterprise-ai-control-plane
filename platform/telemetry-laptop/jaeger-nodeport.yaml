@@ -1,0 +1,21 @@
+# Laptop access to Jaeger's query UI and API. The Jaeger chart has no Service type setting, so the
+# NodePort is a separate Service over the same pod; the kind port mapping publishes it on host
+# port 8084 (scripts/kind-config.yaml). `make pathway-cluster` reads its traces here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-nodeport
+  namespace: telemetry
+  labels:
+    app.kubernetes.io/part-of: eacp
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/instance: jaeger
+    app.kubernetes.io/component: all-in-one
+  ports:
+    - name: http-query
+      port: 16686
+      targetPort: 16686
+      nodePort: 30084

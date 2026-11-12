@@ -107,7 +107,7 @@ spec:
   source:
     repoURL: https://github.com/lum-sdeusch/enterprise-ai-control-plane.git
     targetRevision: main
-    path: platform/telemetry
+    path: platform/telemetry-laptop
   destination:
     server: https://kubernetes.default.svc
     namespace: telemetry

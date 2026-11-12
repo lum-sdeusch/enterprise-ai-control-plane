@@ -38,6 +38,14 @@ patches:
       - op: replace
         path: /spec/source/path
         value: platform/keycloak-cloud-gpu
+  # Without the laptop's NodePort for Jaeger.
+  - target:
+      kind: Application
+      name: telemetry-stores
+    patch: |
+      - op: replace
+        path: /spec/source/path
+        value: platform/telemetry
   - target:
       kind: Application
       name: gateway

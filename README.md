@@ -283,8 +283,14 @@ call reaches an MCP client with its `eacp_code` and conversation id; every phase
 row, also into ClickHouse with the cluster's schema and its insert-only user; one call is one
 trace with the adapter's spans under the gateway's; a stopped OPA or adapter closes the gate.
 
-Not yet verified for ticket 04: the same on the kind cluster. The charts, `make up` and
-`make pathway-cluster` are written for it and render, but have not run against a cluster.
+On the kind cluster (2026-11-11, ticket 04, macOS with Docker Desktop): the same through
+Keycloak-issued tokens, the charts' gateway policies, the adapter with its OPA sidecar under
+Kyverno's restricted pod security, ClickHouse as the audit store and Jaeger behind the collector.
+`make smoke` and `make pathway-cluster` pass: entitled listings, a denial with its `eacp_code`
+and conversation id, one audit row per phase, one trace in Jaeger with the gateway's and the
+adapter's spans, and a paused OPA sidecar closing the gate with a `fail_closed` audit row. The
+fixes were applied to a running cluster; a bring-up from an empty cluster at the final commit has
+not been repeated.
 
 Not yet done: models, Langfuse and the demo Applications do not sync yet; later tickets in
 `.scratch/scaffold-to-poc/` bring them up. The build-time spikes listed in

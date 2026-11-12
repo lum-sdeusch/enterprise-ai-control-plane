@@ -1,13 +1,16 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Tools are looked up on PATH first, then in ./bin (populated by `make tools`).
+# Tools come from ./bin (populated by `make tools`) when they are there, else from PATH. The
+# exported PATH covers scripts and shell recipes; a recipe that is one plain command is run by
+# make itself, and GNU Make 3.81 (the macOS /usr/bin/make) looks that command up on its own
+# unmodified PATH, so the tool variables name the ./bin copy outright.
 BIN     := $(CURDIR)/bin
 export PATH := $(BIN):$(PATH)
 PY      ?= python3
-OPA     ?= opa
-HELM    ?= helm
-BUF     ?= buf
+OPA     ?= $(firstword $(wildcard $(BIN)/opa) opa)
+HELM    ?= $(firstword $(wildcard $(BIN)/helm) helm)
+BUF     ?= $(firstword $(wildcard $(BIN)/buf) buf)
 PROFILE ?= laptop
 REVISION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 OPA_VERSION  ?= v1.22.2

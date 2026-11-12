@@ -10,7 +10,7 @@ answers written into the affected ADRs.
 
 **Blocked by:** 02 Foundation bring-up on kind
 
-**Status:** ready-for-agent
+**Status:** done (PR #4)
 
 - [x] The chart has a value that omits the guardrail processor policy, used only for this slice and off by default.
 - [x] Protected resource metadata is served for the per-server path and for the aggregate path, and Claude Code completes the OAuth flow against Keycloak, with dynamic client registration proxied or a pre-registered client, and the chosen approach documented.

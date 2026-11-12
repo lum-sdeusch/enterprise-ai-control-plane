@@ -56,3 +56,35 @@ Unverified until then: `scripts/up.sh` (local platform images, the policy Config
 values patch), the CRD fields `allowedRequestHeaders` and `metadata` as a live controller applies
 them, the ReferenceGrants for the adapter backend, Kyverno admitting the `eacp.local` images in
 `eacp-system`, and pausing the OPA sidecar on the kind node in `demo/scenarios/pathway.py`.
+
+## Hand-off to a session on the laptop (2026-11-12)
+
+The work so far was done in a cloud session with no access to the kind cluster. Everything is on
+branch `feat/04-adapter-in-the-pathway`; no pull request is open (the owner opens or asks for
+pull requests, and asks before commits are pushed).
+
+State on the laptop: `make down && EACP_REVISION=feat/04-adapter-in-the-pathway make up
+PROFILE=laptop` returned successfully. `make smoke` and `make pathway-cluster` then failed; the
+error output was not captured. Causes to rule out first, in this order:
+
+1. The local checkout was on `main` while the cluster deployed the branch. On `main` there is no
+   `pathway-cluster` target, and `scripts/up.sh` neither builds the adapter and guardrail images
+   nor creates ConfigMap `eacp-system/eacp-policy-bundle`, so the adapter never starts and the
+   gateway refuses every MCP call. Fix: check out the branch and run `make up` again (safe on an
+   existing cluster).
+2. Something other than the gateway answers on host port 8080 (the owner saw Argo CD at
+   `http://localhost:8080/`; Argo CD belongs on 8082, the gateway on 8080). Look for a leftover
+   `kubectl port-forward`.
+3. Timing: `make up` returns when sync waves -1 and lower are healthy. The gateway chart,
+   `eacp-system` and the tools are wave 0 and may still be syncing. If this is the cause, make
+   `scripts/up.sh` (or `scripts/e2e.sh`) wait for the Applications the checks need.
+4. A real defect in the cluster wiring, none of which has run on a cluster before: see the
+   "Unverified until then" list above.
+
+Start with `make diagnose` (read-only; writes `.eacp/diagnose.txt`), then `make smoke`, then
+`make pathway-cluster`. The reference for correct behaviour is `make pathway`, which passes
+against agentgateway 1.7.0 without a cluster; a difference between it and the cluster is in the
+charts, `scripts/up.sh` or the cluster's components, not in the adapter's logic.
+
+The ticket closes when boxes 3 to 7 pass through `make pathway-cluster`. Then record the result
+in the README section "What is verified and what is not" and set this ticket's status to done.

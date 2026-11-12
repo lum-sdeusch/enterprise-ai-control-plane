@@ -24,7 +24,7 @@ spec:
         - name: service.name
           expression: '"agentgateway"'
         - name: deployment.environment.name
-          expression: '"${PROFILE}"'
+          expression: '"{{ .Values.profile }}"'
       attributes:
         add:
           - name: eacp.subject

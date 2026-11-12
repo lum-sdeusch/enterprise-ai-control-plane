@@ -70,6 +70,27 @@ def opa_signal(sig: str) -> bool:
     return done.returncode == 0 and done.stdout.strip() != ""
 
 
+def jaeger_trace(trace_id: str) -> tuple[set[str], set[str]]:
+    """The services in one trace and the names of the adapter's spans in it. Jaeger 2.22 serves
+    only the v3 API, which answers in OTLP JSON: spans grouped by resource."""
+    services: set[str] = set()
+    adapter_spans: set[str] = set()
+    try:
+        resp = httpx.get(f"{JAEGER}/api/v3/traces/{trace_id}", timeout=15)
+        body = resp.json() if resp.status_code == 200 else {}
+        for resource_spans in body.get("result", {}).get("resourceSpans", []):
+            attrs = resource_spans.get("resource", {}).get("attributes", [])
+            svc = next((a["value"].get("stringValue", "") for a in attrs if a.get("key") == "service.name"), "")
+            for scope_spans in resource_spans.get("scopeSpans", []):
+                for span in scope_spans.get("spans", []):
+                    services.add(svc)
+                    if svc == "eacp-adapter":
+                        adapter_spans.add(span.get("name", ""))
+    except (httpx.HTTPError, ValueError) as exc:
+        services = {f"jaeger query failed: {exc}"}
+    return services, adapter_spans
+
+
 async def pathway() -> int:
     rep = Report()
     alice = Session(user_token("alice", password("alice")))
@@ -108,22 +129,18 @@ async def pathway() -> int:
     rep.add("the denial is audited with its reason", bool(rows) and rows[0]["decision"] == "deny" and "clearance_insufficient" in rows[0]["reasons"], str(rows[:1]))
 
     # --- one call, one trace ------------------------------------------------------------------------
-    await asyncio.sleep(8)  # span batches reach Jaeger through the collector
+    # Span batches reach Jaeger through the collector, and an exporter that started before the
+    # collector reconnects with backoff, so ask until the adapter's spans are there.
+    wanted = {"eacp.tool.request", "eacp.tool.response"}
     services: set[str] = set()
     adapter_spans: set[str] = set()
-    try:
-        resp = httpx.get(f"{JAEGER}/api/traces/{alice.trace_id}", timeout=15)
-        for trace in resp.json().get("data", []) if resp.status_code == 200 else []:
-            procs = {pid: p.get("serviceName", "") for pid, p in trace.get("processes", {}).items()}
-            for span in trace.get("spans", []):
-                svc = procs.get(span.get("processID"), "")
-                services.add(svc)
-                if svc == "eacp-adapter":
-                    adapter_spans.add(span.get("operationName", ""))
-    except (httpx.HTTPError, ValueError) as exc:
-        services = {f"jaeger query failed: {exc}"}
+    for _ in range(max(1, int(os.environ.get("EACP_TRACE_WAIT", "90")) // 5)):
+        await asyncio.sleep(5)
+        services, adapter_spans = jaeger_trace(alice.trace_id)
+        if wanted <= adapter_spans:
+            break
     rep.add("Jaeger has one trace with gateway and adapter spans", "eacp-adapter" in services and len(services) >= 2, str(sorted(services)))
-    rep.add("the adapter's request and response spans are in it", {"eacp.tool.request", "eacp.tool.response"} <= adapter_spans, str(sorted(adapter_spans)))
+    rep.add("the adapter's request and response spans are in it", wanted <= adapter_spans, str(sorted(adapter_spans)))
 
     # --- the OPA sidecar stopped --------------------------------------------------------------------
     if opa_signal("STOP"):

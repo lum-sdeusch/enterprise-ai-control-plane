@@ -39,7 +39,7 @@ probe() { # probe NAME URL [curl options]: status code, server header and the fi
   probe "localhost:8080 /" http://localhost:8080/
   probe "keycloak :8081" https://auth.127.0.0.1.sslip.io:8081/realms/eacp --cacert "$CA"
   probe "argocd :8082" http://127.0.0.1:8082/
-  probe "jaeger :8084" http://127.0.0.1:8084/api/services
+  probe "jaeger :8084" http://127.0.0.1:8084/api/v3/services
   run docker ps --format '{{.Names}}  {{.Ports}}' --filter "name=$NODE"
 
   section "Argo CD applications"

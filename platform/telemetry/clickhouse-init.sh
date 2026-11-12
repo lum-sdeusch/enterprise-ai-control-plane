@@ -60,5 +60,7 @@ GRANT SELECT ON eacp_audit.* TO eacp_audit_reader;
 
 CREATE DATABASE IF NOT EXISTS eacp_logs;
 CREATE USER IF NOT EXISTS logs_writer IDENTIFIED WITH sha256_password BY '${LOGS_WRITER_PASSWORD}';
-GRANT CREATE TABLE, INSERT ON eacp_logs.* TO logs_writer;
+-- CREATE DATABASE: the collector's ClickHouse exporter runs CREATE DATABASE IF NOT EXISTS at
+-- every start and ClickHouse checks the grant even though the database exists.
+GRANT CREATE DATABASE, CREATE TABLE, INSERT ON eacp_logs.* TO logs_writer;
 SQL

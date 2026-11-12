@@ -17,6 +17,32 @@ export EACP_GATEWAY_URL="${EACP_GATEWAY_URL:-http://gw.127.0.0.1.sslip.io:8080}"
 if [[ "$PROFILE" == laptop ]]; then export EACP_CA_FILE="${EACP_CA_FILE:-$ROOT/.eacp/ca.pem}"; fi
 export EACP_KEYCLOAK_TOKEN_URL="${EACP_KEYCLOAK_TOKEN_URL:-https://auth.127.0.0.1.sslip.io:8081/realms/eacp/protocol/openid-connect/token}"
 
+# `make up` returns once sync waves -1 and lower are healthy; the gateway routes, the adapter and
+# the tools are wave 0 and may still be syncing. Wait for the Applications a check needs.
+wait_apps() { # wait_apps APPLICATION...
+  command -v kubectl >/dev/null && kubectl get namespace argocd >/dev/null 2>&1 || return 0
+  local deadline=$((SECONDS + ${EACP_E2E_WAIT:-900})) pending="" app status announced=0
+  while :; do
+    pending=""
+    for app in "$@"; do
+      status="$(kubectl get application "$app" -n argocd \
+        -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)"
+      [[ "$status" == Synced/Healthy ]] || pending+=" $app(${status:-missing})"
+    done
+    [[ -n "$pending" ]] || return 0
+    if ((SECONDS >= deadline)); then
+      echo "e2e: Applications not Synced and Healthy:$pending; run 'make diagnose'" >&2
+      return 1
+    fi
+    ((announced)) || { echo "e2e: waiting for Argo CD Applications:$pending"; announced=1; }
+    sleep 5
+  done
+}
+if [[ " $* " == *" --smoke "* ]]; then wait_apps eacp-gateway eacp-system tool-tickets; fi
+if [[ " $* " == *" --pathway "* ]]; then
+  wait_apps eacp-gateway eacp-system tool-tickets telemetry-stores otel-collector jaeger
+fi
+
 if ! curl -fsS "$EACP_GATEWAY_URL/.well-known/oauth-protected-resource/mcp" >/dev/null; then
   echo "e2e: gateway not reachable at $EACP_GATEWAY_URL; run 'make up' first" >&2
   exit 1
